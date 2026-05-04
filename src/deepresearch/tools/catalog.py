@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 import ast
 import operator
-import os
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from langchain_core.tools import tool
-
 
 # ---------------------------------------------------------------------------
 # DuckDuckGo tools (free, no API key)
@@ -294,7 +296,7 @@ def fetch_url_headers(url: str) -> str:
 # Calculation and utility tools (stdlib only, free)
 # ---------------------------------------------------------------------------
 
-_SAFE_OPS = {
+_SAFE_OPS: dict[type[ast.AST], Callable[..., Any]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -307,7 +309,7 @@ _SAFE_OPS = {
 }
 
 
-def _safe_eval(node):
+def _safe_eval(node: ast.AST) -> Any:
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, ast.BinOp):
@@ -349,7 +351,7 @@ def convert_units(value: float, from_unit: str, to_unit: str) -> str:
     Examples: convert_units(5, 'km', 'miles'), convert_units(100, 'celsius', 'fahrenheit')."""
     try:
         from pint import UnitRegistry
-        ureg = UnitRegistry()
+        ureg: Any = UnitRegistry()
         qty = value * ureg(from_unit)
         result = qty.to(to_unit)
         return f"{value} {from_unit} = {result:.6g}"
@@ -523,6 +525,376 @@ def get_public_ip_info() -> str:
         return f"[get_public_ip_info error: {e}]"
 
 
+# ---------------------------------------------------------------------------
+# Free public APIs added in batch 2 — no API key, no OAuth
+# ---------------------------------------------------------------------------
+
+@tool
+def hackernews_search(query: str, max_results: int = 5) -> str:
+    """Search Hacker News stories and comments via the public Algolia API.
+    Returns titles, points, comment counts, and URLs. Use for tech news, developer
+    sentiment, and discussions on programming, startups, and AI."""
+    try:
+        resp = httpx.get(
+            "https://hn.algolia.com/api/v1/search",
+            params={"query": query, "hitsPerPage": max_results, "tags": "story"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        hits = resp.json().get("hits", [])
+        if not hits:
+            return "[hackernews_search: no results]"
+        out = []
+        for h in hits:
+            title = h.get("title") or h.get("story_title") or "(no title)"
+            url = h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}"
+            out.append(
+                f"**{title}**\n"
+                f"{h.get('points', 0)} points | {h.get('num_comments', 0)} comments | by {h.get('author', '?')}\n"
+                f"{url}"
+            )
+        return "\n\n".join(out)
+    except Exception as e:
+        return f"[hackernews_search error: {e}]"
+
+
+@tool
+def reddit_search(query: str, subreddit: str = "", max_results: int = 5) -> str:
+    """Search Reddit posts via the public JSON endpoint (no auth).
+    Optionally restrict to a subreddit (omit the leading r/). Returns titles, scores,
+    subreddit, and permalinks. Use for opinions, sentiment, and niche-community discussion."""
+    try:
+        path = f"/r/{subreddit}/search.json" if subreddit else "/search.json"
+        resp = httpx.get(
+            f"https://www.reddit.com{path}",
+            params={"q": query, "limit": max_results, "sort": "relevance",
+                    "restrict_sr": "1" if subreddit else "0"},
+            headers={"User-Agent": "DeepResearch/1.0"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        children = resp.json().get("data", {}).get("children", [])
+        if not children:
+            return "[reddit_search: no results]"
+        out = []
+        for c in children:
+            d = c.get("data", {})
+            out.append(
+                f"**{d.get('title', '(no title)')}**\n"
+                f"r/{d.get('subreddit', '?')} | {d.get('score', 0)} pts | {d.get('num_comments', 0)} comments\n"
+                f"https://reddit.com{d.get('permalink', '')}"
+            )
+        return "\n\n".join(out)
+    except Exception as e:
+        return f"[reddit_search error: {e}]"
+
+
+@tool
+def pubmed_search(query: str, max_results: int = 5) -> str:
+    """Search PubMed for biomedical and life-sciences literature via NCBI E-utilities.
+    Returns PMIDs, titles, journal, year, and authors. Use for medical research,
+    drug studies, clinical trials, and biology."""
+    try:
+        s = httpx.get(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+            params={"db": "pubmed", "term": query, "retmax": max_results, "retmode": "json"},
+            timeout=10,
+        )
+        s.raise_for_status()
+        ids = s.json().get("esearchresult", {}).get("idlist", [])
+        if not ids:
+            return "[pubmed_search: no results]"
+        d = httpx.get(
+            "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+            params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"},
+            timeout=10,
+        )
+        d.raise_for_status()
+        result = d.json().get("result", {})
+        out = []
+        for pid in ids:
+            r = result.get(pid, {})
+            authors = ", ".join(a.get("name", "") for a in r.get("authors", [])[:3])
+            out.append(
+                f"**{r.get('title', '(no title)')}**\n"
+                f"PMID: {pid} | {r.get('fulljournalname', '')} ({r.get('pubdate', '')})\n"
+                f"Authors: {authors}\n"
+                f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
+            )
+        return "\n\n".join(out)
+    except Exception as e:
+        return f"[pubmed_search error: {e}]"
+
+
+@tool
+def crossref_search(query: str, max_results: int = 5) -> str:
+    """Search Crossref for academic papers and DOI metadata across all disciplines.
+    Returns titles, DOIs, journals, years, and authors. Use to find citations and
+    verify paper metadata."""
+    try:
+        resp = httpx.get(
+            "https://api.crossref.org/works",
+            params={"query": query, "rows": max_results},
+            headers={"User-Agent": "DeepResearch/1.0 (mailto:noreply@example.com)"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("message", {}).get("items", [])
+        if not items:
+            return "[crossref_search: no results]"
+        out = []
+        for it in items:
+            title = (it.get("title") or ["(no title)"])[0]
+            authors = ", ".join(
+                f"{a.get('given', '')} {a.get('family', '')}".strip()
+                for a in it.get("author", [])[:3]
+            )
+            year = (it.get("issued", {}).get("date-parts") or [[None]])[0][0]
+            container = (it.get("container-title") or [""])[0]
+            out.append(
+                f"**{title}**\n"
+                f"Authors: {authors}\n"
+                f"{container} ({year}) | DOI: {it.get('DOI', '?')}\n"
+                f"https://doi.org/{it.get('DOI', '')}"
+            )
+        return "\n\n".join(out)
+    except Exception as e:
+        return f"[crossref_search error: {e}]"
+
+
+@tool
+def wikidata_query(sparql: str) -> str:
+    """Run a SPARQL query against Wikidata for structured factual data.
+    Returns a tab-separated result table. Use for queries like 'all G20 heads of state'
+    or 'cities in Japan with population > 1M'. Pass a complete SPARQL SELECT query."""
+    try:
+        resp = httpx.get(
+            "https://query.wikidata.org/sparql",
+            params={"query": sparql, "format": "json"},
+            headers={"User-Agent": "DeepResearch/1.0", "Accept": "application/sparql-results+json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        cols = data.get("head", {}).get("vars", [])
+        rows = data.get("results", {}).get("bindings", [])
+        if not rows:
+            return "[wikidata_query: no results]"
+        out = ["\t".join(cols)]
+        for row in rows[:25]:
+            out.append("\t".join(row.get(c, {}).get("value", "") for c in cols))
+        if len(rows) > 25:
+            out.append(f"... [{len(rows) - 25} more rows truncated]")
+        return "\n".join(out)
+    except Exception as e:
+        return f"[wikidata_query error: {e}]"
+
+
+@tool
+def world_bank_indicator(country_code: str, indicator: str = "NY.GDP.MKTP.CD",
+                         start_year: int = 2015, end_year: int = 2023) -> str:
+    """Get a World Bank indicator time-series for a country.
+    country_code is ISO-2 (US, IN, JP, DE) or ISO-3. indicator is a World Bank code
+    like 'NY.GDP.MKTP.CD' (GDP USD), 'SP.POP.TOTL' (population), 'SP.DYN.LE00.IN' (life expectancy).
+    Returns yearly values. Use for macroeconomics, demographics, and country comparisons."""
+    try:
+        resp = httpx.get(
+            f"https://api.worldbank.org/v2/country/{country_code}/indicator/{indicator}",
+            params={"format": "json", "date": f"{start_year}:{end_year}", "per_page": 100},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        if not isinstance(payload, list) or len(payload) < 2 or not payload[1]:
+            return f"[world_bank_indicator: no data for {country_code}/{indicator}]"
+        rows = payload[1]
+        name = rows[0].get("indicator", {}).get("value", indicator)
+        country = rows[0].get("country", {}).get("value", country_code)
+        out = [f"**{name}** — {country}"]
+        for r in sorted(rows, key=lambda x: x.get("date", "")):
+            v = r.get("value")
+            out.append(f"  {r.get('date')}: {v if v is not None else 'N/A'}")
+        return "\n".join(out)
+    except Exception as e:
+        return f"[world_bank_indicator error: {e}]"
+
+
+@tool
+def coingecko_price(coin_ids: str, vs_currency: str = "usd") -> str:
+    """Get current cryptocurrency prices via CoinGecko (no API key for the demo plan).
+    coin_ids is a comma-separated list of CoinGecko IDs like 'bitcoin,ethereum,solana'.
+    vs_currency is a fiat code like 'usd' or 'eur'. Returns price, 24h change, and market cap."""
+    try:
+        resp = httpx.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": coin_ids, "vs_currencies": vs_currency,
+                    "include_24hr_change": "true", "include_market_cap": "true"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return f"[coingecko_price: no data for '{coin_ids}']"
+        out = []
+        for coin, fields in data.items():
+            price = fields.get(vs_currency, "?")
+            change = fields.get(f"{vs_currency}_24h_change")
+            mcap = fields.get(f"{vs_currency}_market_cap")
+            change_str = f"{change:+.2f}%" if isinstance(change, (int, float)) else "N/A"
+            mcap_str = f"${mcap:,.0f}" if isinstance(mcap, (int, float)) else "N/A"
+            out.append(f"**{coin}**: {price} {vs_currency.upper()} ({change_str} 24h) | mcap {mcap_str}")
+        return "\n".join(out)
+    except Exception as e:
+        return f"[coingecko_price error: {e}]"
+
+
+@tool
+def weather_now(location: str) -> str:
+    """Get current weather and a short forecast for a location via wttr.in (no API key).
+    location can be a city name ('Tokyo'), airport code ('LAX'), or coordinates.
+    Returns temperature, conditions, humidity, wind, and a 3-day outlook."""
+    try:
+        resp = httpx.get(
+            f"https://wttr.in/{location}",
+            params={"format": "j1"},
+            headers={"User-Agent": "curl/8"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        d = resp.json()
+        cur = (d.get("current_condition") or [{}])[0]
+        area = (d.get("nearest_area") or [{}])[0]
+        place = (area.get("areaName") or [{}])[0].get("value", location)
+        country = (area.get("country") or [{}])[0].get("value", "")
+        desc = (cur.get("weatherDesc") or [{}])[0].get("value", "")
+        lines = [
+            f"**{place}, {country}** — {desc}",
+            f"Temp: {cur.get('temp_C')}°C / {cur.get('temp_F')}°F (feels like {cur.get('FeelsLikeC')}°C)",
+            f"Humidity: {cur.get('humidity')}% | Wind: {cur.get('windspeedKmph')} km/h {cur.get('winddir16Point', '')}",
+        ]
+        for day in (d.get("weather") or [])[:3]:
+            day_desc = (day.get("hourly") or [{}])[4].get("weatherDesc", [{}])[0].get("value", "")
+            lines.append(f"  {day.get('date')}: {day.get('mintempC')}–{day.get('maxtempC')}°C, {day_desc}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"[weather_now error: {e}]"
+
+
+@tool
+def open_meteo_forecast(latitude: float, longitude: float, days: int = 7) -> str:
+    """Get a multi-day weather forecast from Open-Meteo (no API key, no rate limits).
+    Pass coordinates (use osm_geocode first to convert an address). days is 1-16.
+    Returns daily min/max temperature and precipitation."""
+    try:
+        resp = httpx.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum",
+                "forecast_days": min(max(days, 1), 16),
+                "timezone": "auto",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        d = resp.json().get("daily", {})
+        dates = d.get("time", [])
+        if not dates:
+            return f"[open_meteo_forecast: no data for {latitude},{longitude}]"
+        tmax = d.get("temperature_2m_max", [])
+        tmin = d.get("temperature_2m_min", [])
+        precip = d.get("precipitation_sum", [])
+        out = [f"Forecast for {latitude},{longitude} (next {len(dates)} days):"]
+        for i, day in enumerate(dates):
+            out.append(
+                f"  {day}: {tmin[i]}–{tmax[i]}°C | precip {precip[i]} mm"
+            )
+        return "\n".join(out)
+    except Exception as e:
+        return f"[open_meteo_forecast error: {e}]"
+
+
+@tool
+def osm_geocode(address: str) -> str:
+    """Convert an address or place name to coordinates via OpenStreetMap Nominatim (no API key).
+    Returns latitude, longitude, and the matched display name. Use before tools like
+    open_meteo_forecast that need coordinates."""
+    try:
+        resp = httpx.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": address, "format": "json", "limit": 3},
+            headers={"User-Agent": "DeepResearch/1.0 (research-agent)"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if not results:
+            return f"[osm_geocode: no match for '{address}']"
+        out = []
+        for r in results:
+            out.append(
+                f"**{r.get('display_name')}**\n"
+                f"  lat={r.get('lat')}, lon={r.get('lon')} | type={r.get('type', '?')}"
+            )
+        return "\n".join(out)
+    except Exception as e:
+        return f"[osm_geocode error: {e}]"
+
+
+@tool
+def pdf_extract_text(source: str, max_pages: int = 20) -> str:
+    """Extract text from a PDF file by URL or local path.
+    Reads up to max_pages pages and returns plain text. Use for reading academic papers,
+    reports, and any PDF document the user references."""
+    try:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        if source.startswith(("http://", "https://")):
+            resp = httpx.get(source, follow_redirects=True, timeout=30,
+                             headers={"User-Agent": "DeepResearch/1.0"})
+            resp.raise_for_status()
+            reader = PdfReader(BytesIO(resp.content))
+        else:
+            reader = PdfReader(source)
+
+        pages = reader.pages[:max_pages]
+        text = "\n\n".join(p.extract_text() or "" for p in pages)
+        text = " ".join(text.split())
+        if len(text) > 6000:
+            text = text[:6000] + f" ... [truncated; total ~{len(text)} chars from {len(pages)} pages]"
+        return text or f"[pdf_extract_text: no extractable text in {source}]"
+    except Exception as e:
+        return f"[pdf_extract_text error: {e}]"
+
+
+@tool
+def youtube_transcript(video_url_or_id: str, language: str = "en") -> str:
+    """Fetch the transcript/captions for a YouTube video.
+    Accepts a full URL or just the video ID. Returns the transcript as concatenated text.
+    Use to summarize talks, podcasts, lectures, or interviews."""
+    try:
+        import re as _re
+
+        from youtube_transcript_api import YouTubeTranscriptApi
+
+        match = _re.search(r"(?:v=|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})", video_url_or_id)
+        video_id = match.group(1) if match else video_url_or_id.strip()
+
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id, languages=[language])
+        text = " ".join(snippet.text for snippet in transcript)
+        if not text:
+            return f"[youtube_transcript: no captions for {video_id}]"
+        if len(text) > 6000:
+            text = text[:6000] + f" ... [truncated; full transcript ~{len(text)} chars]"
+        return text
+    except Exception as e:
+        return f"[youtube_transcript error: {e}]"
+
+
 ALL_DATA_TOOLS = [
     web_search,
     ddg_news,
@@ -548,4 +920,16 @@ ALL_DATA_TOOLS = [
     get_github_repo,
     search_pypi,
     get_public_ip_info,
+    hackernews_search,
+    reddit_search,
+    pubmed_search,
+    crossref_search,
+    wikidata_query,
+    world_bank_indicator,
+    coingecko_price,
+    weather_now,
+    open_meteo_forecast,
+    osm_geocode,
+    pdf_extract_text,
+    youtube_transcript,
 ]
