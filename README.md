@@ -109,6 +109,61 @@ In the REPL, slash commands work as typed:
 
 ---
 
+## Demo & screenshots
+
+A scripted demo runs five queries chosen to exercise each render tool — handy for smoke-testing a fresh checkout, generating LangSmith traces, and capturing example output.
+
+```bash
+./scripts/demo.sh                 # all 5 queries with LangSmith tracing on
+./scripts/demo.sh --no-trace      # skip LangSmith
+./scripts/demo.sh --explain-only  # BM25 ranking only, no LLM call (free)
+./scripts/demo.sh 3               # only run query #3
+```
+
+| # | Expected render | Query |
+|---|---|---|
+| 1 | `render_qa` | Current stock price + P/E for NVDA |
+| 2 | `render_card` | 5-sentence Wikipedia summary of the French Revolution |
+| 3 | `render_table` | NVDA vs AMD: market cap, P/E, 52-week range |
+| 4 | `render_chart` | India GDP, World Bank, 2015–2023 |
+| 5 | `render_timeline` | Major SpaceX launches, 2008–2024 |
+
+### Example terminal output
+
+After running `./scripts/demo.sh`, paste a representative rendered block here so readers see what the CLI actually paints. Until then, screenshots live in `docs/screenshots/` (see below).
+
+<!-- Replace this placeholder with actual demo output after running ./scripts/demo.sh -->
+
+```text
+(demo output goes here — paste from `./scripts/demo.sh 3 | tee` or similar)
+```
+
+### LangSmith traces
+
+Every run with `LANGCHAIN_TRACING_V2=true` shows up at https://smith.langchain.com → project `deepresearch-agent`.
+
+<!-- Drop PNGs into docs/screenshots/ using the filenames in docs/screenshots/README.md -->
+
+![LangSmith — project run list](docs/screenshots/langsmith-project.png)
+
+![LangSmith — full trace waterfall (demo #3)](docs/screenshots/langsmith-trace-waterfall.png)
+
+![LangSmith — tool call inputs/outputs](docs/screenshots/langsmith-tool-detail.png)
+
+### LangGraph Studio (optional)
+
+```bash
+uv run langgraph dev
+```
+
+![Studio — graph view](docs/screenshots/studio-graph.png)
+
+![Studio — run with message thread](docs/screenshots/studio-run.png)
+
+> See [`docs/screenshots/README.md`](docs/screenshots/README.md) for a capture checklist (which views to shoot, file naming, sizing).
+
+---
+
 ## Tool catalog (36 + 6 = 42 total)
 
 ### Data tools by category
@@ -196,6 +251,8 @@ deepresearch/
 ├── langgraph.json                     # for `langgraph dev` / Studio
 ├── pyproject.toml                     # deps, ruff, mypy, pytest config
 ├── deepresearch-agent-prd.md          # product requirements doc
+├── scripts/demo.sh                    # 5-query demo runner
+├── docs/screenshots/                  # README assets (drop PNGs here)
 ├── src/deepresearch/
 │   ├── cli.py                         # REPL + single-shot + cancellation
 │   ├── tools/
