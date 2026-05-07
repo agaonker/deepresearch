@@ -29,10 +29,10 @@ Six demonstrated capabilities:
 | **M2** | LangSmith wiring (`@traceable`, run metadata) | ✅ Done |
 | **M3** | `langgraph dev` Studio integration | ✅ Done |
 | **M3.5** | Code-quality pass (type hints, ruff + mypy clean) | ✅ Done |
-| **M4** | Eval dataset (10 golden queries, pytest harness) | 🔜 Post-v1.0 |
+| **M4** | Eval dataset (10 golden queries, pytest harness) | ✅ Done |
 | **M5** | mem0 cross-session memory | 🔜 Parked (see plan file) |
 
-**36 data tools + 6 render tools** in the catalog today. Tests: **35/35 passing**.
+**36 data tools + 6 render tools** in the catalog today. Tests: **50/50 passing** (35 unit + 15 eval).
 
 ---
 
@@ -210,10 +210,13 @@ deepresearch/
 │   └── streaming/
 │       ├── events.py                  # parses _render:: sentinel
 │       └── render_cli.py              # ASCII painters
+├── src/deepresearch/eval/
+│   └── dataset.py                    # 10 golden queries (M4)
 └── tests/
     ├── test_retriever.py              # 6 tests
     ├── test_commands.py               # 11 tests
-    └── test_render.py                 # 18 tests
+    ├── test_render.py                 # 18 tests
+    └── test_eval.py                   # 15 tests — golden BM25 harness
 ```
 
 ---

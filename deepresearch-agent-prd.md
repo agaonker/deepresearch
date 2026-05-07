@@ -394,7 +394,7 @@ deepresearch-agent/
 | **M2: LangSmith wiring** | Env config, `@traceable` on retriever and dispatch, run metadata | ✅ Done |
 | **M3: `langgraph dev` integration** | `langgraph.json`, top-level `graph`, Studio walkthrough | ✅ Done |
 | **M3.5: Code-quality pass** | Type hints, docstrings, ruff + mypy clean | ✅ Done |
-| **M4: Eval dataset** | 10 golden queries, pytest harness | 🔜 Post-v1.0 |
+| **M4: Eval dataset** | 10 golden queries, pytest harness | ✅ Done |
 | **M5: mem0 cross-session memory** | OSS mem0 + Chroma, `memory_node`, `/memories` + `/forget`, PRD §2.2 amendment | 🔜 Parked (see plan) |
 
 ---
