@@ -68,7 +68,7 @@ run_one() {
   if [[ "$EXPLAIN_ONLY" == "1" ]]; then
     "${CLI[@]}" --explain-tools "$query"
   else
-    "${CLI[@]}" "${EXTRA_FLAGS[@]}" "$query"
+    "${CLI[@]}" ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} "$query"
   fi
 }
 

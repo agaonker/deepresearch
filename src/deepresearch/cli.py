@@ -11,6 +11,7 @@ from typing import Any
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from deepresearch.commands.registry import dispatch
@@ -168,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         _explain_tools(text)
         return 0
 
-    graph = build_graph()
+    graph = build_graph(checkpointer=MemorySaver())
 
     if not text:
         _repl(graph)
