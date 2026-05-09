@@ -23,6 +23,14 @@ Run `./scripts/demo.sh` first so LangSmith has fresh traces and your terminal ha
 | `studio-run.png` (optional) | A run mid-execution, with the message thread on the right. Send demo #1 from inside Studio so you have a known query to point at. | Show the graph, the messages panel, and at least one highlighted node. | ☐ |
 | `studio-state.png` (optional) | The state inspector showing `iterations`, `cancelled`, `messages`. | Just the state panel. | ☐ |
 
+### Terminal (CLI)
+
+| Filename | View | Crop tip | Status |
+|---|---|---|---|
+| `cli-explain-tools.png` | `research --explain-tools "..."` output — BM25 ranking with no LLM call. | Show the prompt + the top tools with their scores. | ✅ Captured |
+| `cli-arxiv-rlhf-table.png` | A real run that ends in `render_table` — paints a comparison of SFT/RLHF arxiv papers. | Crop to the painted table. | ✅ Captured |
+| `cli-arxiv-rlhf-summary.png` | The agent's narrative summary + cited source URLs that follow the table. | Show the source list and at least one paragraph of the summary. | ✅ Captured |
+
 ## Sizing
 
 - Aim for **1600×1000 max** so the README pages load fast on GitHub.

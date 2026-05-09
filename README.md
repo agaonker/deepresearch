@@ -156,6 +156,20 @@ Volume: 134,128,204
 +----------------------------------------------------------------------------+
 ```
 
+### CLI in action
+
+`--explain-tools` prints the BM25 ranking for a query without calling the LLM — useful for debugging tool selection:
+
+![--explain-tools output for an SFT/RLHF query](docs/screenshots/cli-explain-tools.png)
+
+A real run on the same topic — agent calls `arxiv_search`, then renders a comparison table of papers:
+
+![Rendered table of SFT/RLHF arxiv papers](docs/screenshots/cli-arxiv-rlhf-table.png)
+
+The agent then writes a narrative summary with cited source URLs:
+
+![Narrative summary with arxiv source citations](docs/screenshots/cli-arxiv-rlhf-summary.png)
+
 ### LangSmith traces
 
 Every run with `LANGCHAIN_TRACING_V2=true` shows up at https://smith.langchain.com → project `deepresearch-agent`.
