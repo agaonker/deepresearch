@@ -130,35 +130,51 @@ A scripted demo runs five queries chosen to exercise each render tool — handy 
 
 ### Example terminal output
 
-After running `./scripts/demo.sh`, paste a representative rendered block here so readers see what the CLI actually paints. Until then, screenshots live in `docs/screenshots/` (see below).
-
-<!-- Replace this placeholder with actual demo output after running ./scripts/demo.sh -->
+Demo #1 captured live — the agent picks `stock_price`, then renders a card:
 
 ```text
-(demo output goes here — paste from `./scripts/demo.sh 3 | tee` or similar)
+[agent → tools] stock_price(ticker=NVDA)
+[tool:stock_price] **NVIDIA Corporation** (NVDA)
+Price: $215.2
+Market Cap: $5,230,436,024,320
+P/E Ratio: 43.828922
+52W Range: 115.21 – 217.8
+Volume: 134,128,204
+[agent → tools] render_card(title=NVIDIA Corporation (NVDA) Stock Overview, ...)
++----------------------------------------------------------------------------+
+| NVIDIA Corporation (NVDA) Stock Overview                                   |
++----------------------------------------------------------------------------+
+| NVIDIA's current stock price is **$215.20** with a P/E ratio of **43.83**. |
++----------------------------------------------------------------------------+
+| Current Price: $215.20                                                     |
+| P/E Ratio: 43.83                                                           |
+| Market Cap: $5.23 Trillion                                                 |
+| 52-Week Range: $115.21 – $217.80                                           |
+| Volume: 134,128,204                                                        |
++----------------------------------------------------------------------------+
 ```
 
 ### LangSmith traces
 
 Every run with `LANGCHAIN_TRACING_V2=true` shows up at https://smith.langchain.com → project `deepresearch-agent`.
 
-<!-- Drop PNGs into docs/screenshots/ using the filenames in docs/screenshots/README.md -->
+The waterfall view shows the full ReAct loop end-to-end — `agent_node` → `bm25_tool_selection` → `ChatAnthropic` → `tools` (`stock_price`) → back to `agent` → render:
 
-![LangSmith — project run list](docs/screenshots/langsmith-project.png)
+![LangSmith waterfall trace](docs/screenshots/langsmith-trace-waterfall.png)
 
-![LangSmith — full trace waterfall (demo #3)](docs/screenshots/langsmith-trace-waterfall.png)
+The vertical tree view of the same trace shows per-node timing, token counts, and the model in use:
 
-![LangSmith — tool call inputs/outputs](docs/screenshots/langsmith-tool-detail.png)
+![LangSmith trace tree with token counts](docs/screenshots/langsmith-trace-tree.png)
 
-### LangGraph Studio (optional)
+### LangGraph Studio
+
+Run the same compiled graph in the visual debugger:
 
 ```bash
 uv run langgraph dev
 ```
 
-![Studio — graph view](docs/screenshots/studio-graph.png)
-
-![Studio — run with message thread](docs/screenshots/studio-run.png)
+![LangGraph Studio graph](docs/screenshots/studio-graph.png)
 
 > See [`docs/screenshots/README.md`](docs/screenshots/README.md) for a capture checklist (which views to shoot, file naming, sizing).
 
