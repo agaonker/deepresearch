@@ -22,7 +22,7 @@ def retriever() -> ToolRetriever:
 
 
 def test_dataset_size():
-    assert len(GOLDEN_QUERIES) == 10
+    assert len(GOLDEN_QUERIES) == 50
 
 
 def test_dataset_names_unique():
