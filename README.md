@@ -70,12 +70,12 @@ LANGCHAIN_PROJECT=deepresearch-agent
 
 **REPL** — interactive, fastest iteration:
 ```bash
-uv run python -m deepresearch.cli
+uv run research
 ```
 
 **Single-shot** — one query and exit:
 ```bash
-uv run python -m deepresearch.cli "Compare NVDA vs AMD last quarter revenue"
+uv run research "Compare NVDA vs AMD last quarter revenue"
 ```
 
 **LangGraph Studio** — visual graph debugger in browser:
@@ -92,11 +92,13 @@ After your first run, open https://smith.langchain.com → project `deepresearch
 ## CLI options
 
 ```bash
-uv run python -m deepresearch.cli                              # REPL
-uv run python -m deepresearch.cli "your query"                 # single-shot
-uv run python -m deepresearch.cli --explain-tools "query"      # show BM25 ranking, no LLM call
-uv run python -m deepresearch.cli --no-trace "query"           # disable LangSmith tracing
+uv run research                              # REPL
+uv run research "your query"                 # single-shot
+uv run research --explain-tools "query"      # show BM25 ranking, no LLM call
+uv run research --no-trace "query"           # disable LangSmith tracing
 ```
+
+> Tip: activate the venv once (`source .venv/bin/activate`) and the prefix drops entirely — just `research "your query"`.
 
 In the REPL, slash commands work as typed:
 - `/help` — list commands

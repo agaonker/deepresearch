@@ -24,7 +24,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CLI=(uv run python -m deepresearch.cli)
+CLI=(uv run research)
 EXTRA_FLAGS=()
 ONLY=""
 EXPLAIN_ONLY=0
