@@ -12,6 +12,8 @@ Run `./scripts/demo.sh` first so LangSmith has fresh traces and your terminal ha
 |---|---|---|---|
 | `langsmith-trace-waterfall.png` | One trace in **Waterfall** mode — full ReAct loop with timing bars (`agent` → `bm25_tool_selection` → `ChatAnthropic` → `tools` → render). | Show timing bars on the left and the Input/Output panel on the right. | ✅ Captured |
 | `langsmith-trace-tree.png` | Same trace in vertical **Tree** mode — shows per-node duration, token counts, and the model in use. | Include token-count badges and model labels. | ✅ Captured |
+| `langsmith-experiment-overview.png` | Experiments view of an eval run — full table with all scorer columns + cost/latency. | Show the experiment header (`exp-...`) and at least 3 example rows. | ✅ Captured |
+| `langsmith-experiment-scores.png` | Same experiment, zoomed to the per-row scorer cells with red/green color coding. | Crop to the scorer columns; keep the column averages visible at the top. | ✅ Captured |
 | `langsmith-project.png` (optional) | Project dashboard listing recent runs (after running `demo.sh`). | Crop to the runs table — show the metadata columns (`command_used`, `iterations`, `tool_count`). | ☐ |
 | `langsmith-tool-detail.png` (optional) | Click into one tool call (e.g. `stock_price`) and screenshot the input/output panel. | Show args, return value, and latency. | ☐ |
 
