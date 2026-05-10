@@ -8,20 +8,12 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langgraph.prebuilt import ToolNode
 
 from deepresearch.graph.state import AgentState
+from deepresearch.prompts import render_prompt
 from deepresearch.tools.catalog import ALL_DATA_TOOLS
 from deepresearch.tools.render import ALL_RENDER_TOOLS
 from deepresearch.tools.retriever import ToolRetriever
 
 MAX_ITERATIONS = 12
-
-_SYSTEM_PROMPT = """You are DeepResearch, a tool-using research agent.
-
-Workflow:
-1. Pick the smallest set of data tools that answer the user's question. Run independent tools in parallel.
-2. After gathering evidence, ALWAYS finish by calling exactly one render tool (render_qa, render_card, render_table, or render_chart) so the user sees a structured result. render_qa is the default for cited answers.
-3. Cite sources (URLs) when you have them.
-4. Keep reasoning concise. Do not call tools you don't need.
-"""
 
 _ALL_TOOLS = ALL_DATA_TOOLS + ALL_RENDER_TOOLS
 _RETRIEVER = ToolRetriever(_ALL_TOOLS)
@@ -37,10 +29,16 @@ def _build_llm() -> BaseChatModel:
             temperature=0,
         )
     from langchain_anthropic import ChatAnthropic
+    # The `anthropic-beta: prompt-caching-2024-07-31` header is required for
+    # `cache_control` markers on content blocks to be honored — without it the
+    # API silently ignores them (verified empirically on opus-4-7, sonnet-4-6,
+    # haiku-4-5). The marker itself is added to the SystemMessage in
+    # `agent_node` below.
     return ChatAnthropic(  # type: ignore[call-arg]
         model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"),
         streaming=True,
         max_tokens=4096,
+        default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
 
 
@@ -63,7 +61,16 @@ def agent_node(state: AgentState) -> dict[str, Any]:
     top_tools = _RETRIEVER.search(query, k=8)
 
     llm = _build_llm().bind_tools(top_tools)
-    response = llm.invoke([SystemMessage(content=_SYSTEM_PROMPT), *messages])
+    system_message = SystemMessage(
+        content=[
+            {
+                "type": "text",
+                "text": render_prompt("system"),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
+    response = llm.invoke([system_message, *messages])
 
     return {
         "messages": [response],

@@ -1,0 +1,9 @@
+Summarize the following. If it looks like a URL, fetch it first with
+`fetch_url` (or `pdf_extract_text` if it ends in `.pdf`). If it's a
+YouTube link, use `youtube_transcript`.
+
+Then call `render_card` with a concise summary in `content` and any
+useful metadata (date, author, source domain) in `metadata`.
+
+Input:
+{{ arg }}

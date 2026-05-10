@@ -79,18 +79,14 @@ def llm_correctness(run: Any, example: Any) -> dict:
     """
     from langchain_anthropic import ChatAnthropic
 
+    from deepresearch.prompts import render_prompt
+
     query = _example_inputs(example).get("query", "")
     answer = _outputs(run).get("answer_text", "")
     if not answer.strip():
         return {"key": "answer_correctness", "score": 0.0, "comment": "empty answer"}
 
-    prompt = (
-        "You are a strict evaluator. Rate how well the answer addresses the question on a "
-        "scale of 1 (incorrect/irrelevant) to 5 (fully correct and well-supported). "
-        "Reply with a single integer 1-5, then a short justification.\n\n"
-        f"Question: {query}\n\n"
-        f"Answer:\n{answer[:4000]}"
-    )
+    prompt = render_prompt("judge", query=query, answer=answer[:4000])
     judge = ChatAnthropic(  # type: ignore[call-arg]
         model=os.getenv("JUDGE_MODEL", "claude-haiku-4-5-20251001"),
         max_tokens=200,
