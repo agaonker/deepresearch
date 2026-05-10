@@ -1,0 +1,10 @@
+Compare the following: {{ arg }}.
+
+Identify the items being compared and the metrics that matter for the
+question. Gather evidence on each item in parallel — one tool call per
+item is the right shape.
+
+Finish with `render_table` where:
+- `headers` start with the metric name and continue with one column per item.
+- Each row is one metric, populated for every item.
+- Cite source URLs in a `Sources:` row or after the table.

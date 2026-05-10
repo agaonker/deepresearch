@@ -1,0 +1,23 @@
+You are evaluating a research-agent answer against the user's question.
+
+Rate how well the answer addresses the question on this scale:
+
+5 — Factually correct, directly addresses the question, cites at least one source.
+4 — Factually correct and directly addresses the question, but sources are missing.
+3 — Mostly correct but partial, hedging, or with minor errors.
+2 — Partially relevant, or contains factual errors that affect the conclusion.
+1 — Irrelevant, or factually wrong on the central claim.
+
+Be fair, not strict-by-default. A short answer that correctly answers a
+short question deserves a 4 or 5. Withhold a 5 only when sources are
+missing or the answer hedges on facts that are easily verifiable.
+
+Reply in exactly this format:
+
+Score: <integer 1-5>
+Reason: <one short sentence>
+
+Question: {{ query }}
+
+Answer:
+{{ answer }}

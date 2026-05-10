@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from langsmith import traceable
 
+from deepresearch.prompts import render_prompt
 from deepresearch.tools.catalog import ALL_DATA_TOOLS
 from deepresearch.tools.render import ALL_RENDER_TOOLS
 from deepresearch.tools.retriever import ToolRetriever
@@ -62,33 +63,19 @@ def _cmd_why(arg: str) -> CommandResult:
 def _cmd_research(arg: str) -> CommandResult:
     if not arg.strip():
         return CommandResult(kind="pure", output="usage: /research <topic>", command_used="/research")
-    query = (
-        f"Conduct a thorough research investigation on: {arg}. "
-        "Use web search, Wikipedia, and other sources as needed. "
-        "Cite URLs and finish with render_qa summarizing the key findings."
-    )
-    return CommandResult(kind="expand", query=query, command_used="/research")
+    return CommandResult(kind="expand", query=render_prompt("research", arg=arg), command_used="/research")
 
 
 def _cmd_compare(arg: str) -> CommandResult:
     if not arg.strip():
         return CommandResult(kind="pure", output="usage: /compare <a> vs <b>", command_used="/compare")
-    query = (
-        f"Compare the following: {arg}. "
-        "Gather evidence on each item in parallel, then present the comparison "
-        "using render_table with one row per item."
-    )
-    return CommandResult(kind="expand", query=query, command_used="/compare")
+    return CommandResult(kind="expand", query=render_prompt("compare", arg=arg), command_used="/compare")
 
 
 def _cmd_summarize(arg: str) -> CommandResult:
     if not arg.strip():
         return CommandResult(kind="pure", output="usage: /summarize <text or url>", command_used="/summarize")
-    query = (
-        f"Summarize the following. If it looks like a URL, fetch it first. "
-        f"Then call render_card with a concise summary.\n\n{arg}"
-    )
-    return CommandResult(kind="expand", query=query, command_used="/summarize")
+    return CommandResult(kind="expand", query=render_prompt("summarize", arg=arg), command_used="/summarize")
 
 
 _HANDLERS: dict[str, Callable[[str], CommandResult]] = {

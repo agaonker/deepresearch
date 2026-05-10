@@ -57,17 +57,69 @@ def _all_tool_calls(messages: list[Any]) -> list[str]:
 
 
 def _last_text(messages: list[Any]) -> str:
+    """Return the user-visible answer text from the agent's run.
+
+    The agent's deliberate, structured answer is whatever it passed to
+    its final `render_*` tool call. The preamble prose ("I'll fetch the
+    weather…") is mid-flow narration, not the answer. **Render content
+    always wins** — only fall back to plain text when no render call
+    happened.
+    """
     for msg in reversed(messages):
-        if isinstance(msg, AIMessage):
-            content = msg.content
-            if isinstance(content, str) and content.strip():
-                return content
-            if isinstance(content, list):
-                parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-                joined = "".join(parts).strip()
-                if joined:
-                    return joined
+        if not isinstance(msg, AIMessage) or not msg.tool_calls:
+            continue
+        for tc in msg.tool_calls:
+            name = tc.get("name", "")
+            if name.startswith("render_"):
+                return _render_to_text(name, tc.get("args") or {})
+
+    for msg in reversed(messages):
+        if not isinstance(msg, AIMessage):
+            continue
+        content = msg.content
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            joined = "".join(parts).strip()
+            if joined:
+                return joined
     return ""
+
+
+def _render_to_text(name: str, args: dict) -> str:
+    """Flatten a render_* tool call's args into a human-readable string."""
+    if name == "render_qa":
+        out = [str(args.get("answer", "")).strip()]
+        sources = args.get("sources") or []
+        if sources:
+            out.append("Sources: " + ", ".join(str(s) for s in sources))
+        return "\n".join(p for p in out if p)
+    if name == "render_card":
+        title = str(args.get("title", "")).strip()
+        content = str(args.get("content", "")).strip()
+        metadata = args.get("metadata") or {}
+        meta = "\n".join(f"{k}: {v}" for k, v in metadata.items()) if isinstance(metadata, dict) else ""
+        return "\n".join(p for p in (title, content, meta) if p)
+    if name == "render_table":
+        title = str(args.get("title", "")).strip()
+        headers = args.get("headers") or []
+        rows = args.get("rows") or []
+        body = " | ".join(str(h) for h in headers) + "\n"
+        body += "\n".join(" | ".join(str(c) for c in row) for row in rows)
+        return f"{title}\n{body}".strip()
+    if name == "render_chart":
+        title = str(args.get("title", "")).strip()
+        labels = args.get("labels") or []
+        values = args.get("values") or []
+        body = ", ".join(f"{lbl}={val}" for lbl, val in zip(labels, values, strict=False))
+        return f"{title}\n{body}".strip()
+    # render_timeline, render_tree, anything else — JSON-ish fallback
+    import json
+    try:
+        return f"{args.get('title', name)}\n{json.dumps(args, default=str)[:2000]}"
+    except Exception:
+        return str(args)[:2000]
 
 
 def _build_target(graph: Any) -> Any:
