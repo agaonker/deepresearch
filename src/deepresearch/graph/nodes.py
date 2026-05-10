@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.prebuilt import ToolNode
 
 from deepresearch.graph.state import AgentState
+from deepresearch.llm import build_chat, build_system_message, resolve
 from deepresearch.prompts import render_prompt
 from deepresearch.tools.catalog import ALL_DATA_TOOLS
 from deepresearch.tools.render import ALL_RENDER_TOOLS
@@ -17,29 +16,6 @@ MAX_ITERATIONS = 12
 
 _ALL_TOOLS = ALL_DATA_TOOLS + ALL_RENDER_TOOLS
 _RETRIEVER = ToolRetriever(_ALL_TOOLS)
-
-
-def _build_llm() -> BaseChatModel:
-    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
-    if provider == "ollama":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(
-            model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b"),
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            temperature=0,
-        )
-    from langchain_anthropic import ChatAnthropic
-    # The `anthropic-beta: prompt-caching-2024-07-31` header is required for
-    # `cache_control` markers on content blocks to be honored — without it the
-    # API silently ignores them (verified empirically on opus-4-7, sonnet-4-6,
-    # haiku-4-5). The marker itself is added to the SystemMessage in
-    # `agent_node` below.
-    return ChatAnthropic(  # type: ignore[call-arg]
-        model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"),
-        streaming=True,
-        max_tokens=4096,
-        default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-    )
 
 
 def agent_node(state: AgentState) -> dict[str, Any]:
@@ -60,22 +36,19 @@ def agent_node(state: AgentState) -> dict[str, Any]:
     query = _extract_query(messages)
     top_tools = _RETRIEVER.search(query, k=8)
 
-    llm = _build_llm().bind_tools(top_tools)
-    system_message = SystemMessage(
-        content=[
-            {
-                "type": "text",
-                "text": render_prompt("system"),
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
-    )
+    source = resolve("agent")
+    llm = build_chat(source).bind_tools(top_tools)
+    system_message = build_system_message(render_prompt("system"), source)
     response = llm.invoke([system_message, *messages])
 
     return {
         "messages": [response],
         "iterations": iterations + 1,
-        "metadata": {**state.get("metadata", {}), "tool_count": len(top_tools)},
+        "metadata": {
+            **state.get("metadata", {}),
+            "tool_count": len(top_tools),
+            "llm_source": source.name,
+        },
     }
 
 

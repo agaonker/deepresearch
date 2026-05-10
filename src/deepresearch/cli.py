@@ -122,6 +122,15 @@ def _join_blocks(content: list[Any]) -> str:
     return "".join(parts)
 
 
+def _print_llm_registry() -> None:
+    from deepresearch.llm import SOURCES
+    print(f"{'name':<18} {'provider':<10} {'model':<32} {'cache':<6} notes")
+    print("-" * 100)
+    for src in SOURCES.values():
+        cache = "yes" if src.supports_prompt_cache else "—"
+        print(f"{src.name:<18} {src.provider:<10} {src.model:<32} {cache:<6} {src.notes}")
+
+
 def _explain_tools(query: str) -> None:
     retriever = ToolRetriever(ALL_DATA_TOOLS + ALL_RENDER_TOOLS)
     ranked = retriever.explain(query, k=12)
@@ -154,11 +163,22 @@ def main(argv: list[str] | None = None) -> int:
                         help="Print BM25 tool ranking for the query and exit.")
     parser.add_argument("--no-trace", action="store_true",
                         help="Disable LangSmith tracing for this run.")
+    parser.add_argument("--llm", default=None,
+                        help="LLM source name (e.g. opus, gemma4-e4b). See --list-llms.")
+    parser.add_argument("--list-llms", action="store_true",
+                        help="Print the registered LLM sources and exit.")
     args = parser.parse_args(argv)
 
     load_dotenv()
     if args.no_trace:
         os.environ["LANGCHAIN_TRACING_V2"] = "false"
+    if args.llm:
+        # The agent and any sub-component reads AGENT_LLM via deepresearch.llm.resolve.
+        os.environ["AGENT_LLM"] = args.llm
+
+    if args.list_llms:
+        _print_llm_registry()
+        return 0
 
     text = " ".join(args.query).strip()
 

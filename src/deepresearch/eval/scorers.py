@@ -13,7 +13,6 @@ shape: `{"key": <name>, "score": <0..1>, "comment": <optional>}`.
 """
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
@@ -77,8 +76,7 @@ def llm_correctness(run: Any, example: Any) -> dict:
     Returns a 0..1 score derived from a 1-5 rating. Costs ~$0.005 per
     call. The runner skips this scorer when `--no-llm-judge` is set.
     """
-    from langchain_anthropic import ChatAnthropic
-
+    from deepresearch.llm import build_chat, resolve
     from deepresearch.prompts import render_prompt
 
     query = _example_inputs(example).get("query", "")
@@ -87,11 +85,7 @@ def llm_correctness(run: Any, example: Any) -> dict:
         return {"key": "answer_correctness", "score": 0.0, "comment": "empty answer"}
 
     prompt = render_prompt("judge", query=query, answer=answer[:4000])
-    judge = ChatAnthropic(  # type: ignore[call-arg]
-        model=os.getenv("JUDGE_MODEL", "claude-haiku-4-5-20251001"),
-        max_tokens=200,
-        timeout=60,
-    )
+    judge = build_chat(resolve("judge"), max_tokens=200, streaming=False)
     try:
         response = judge.invoke(prompt)
         text = response.content if isinstance(response.content, str) else str(response.content)
