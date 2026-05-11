@@ -2,6 +2,76 @@
 
 This guide shows how to put the same agent through the same dataset on three providers — Anthropic Claude, OpenAI ChatGPT, and local Gemma via Ollama — and compare the results in LangSmith.
 
+## Findings (TL;DR)
+
+A 5-example smoke comparison run on 2026-05-10, agent code unchanged across runs (same PR #5 prompts + caching wiring, same BM25 retrieval, same dataset).
+
+### Headline numbers
+
+| Scorer | Opus + Haiku judge | Gemma 4 e4b + Haiku judge | Gemma 4 e4b + Qwen 7B judge |
+|---|---|---|---|
+| `tool_recall` | **1.00** | 0.80 | 1.00 |
+| `render_match` | **0.80** | 0.20 | 0.40 |
+| `iterations_used` | 0.76 | 0.69 | **0.84** |
+| `answer_correctness` | 0.68 | 0.44 | 0.68 |
+| Latency / example | ~10–30 s | ~110 s | ~110 s |
+| LLM cost / 5 examples | ~$0.30 | ~$0.03 (judge only) | **$0** |
+
+### What worked
+
+- **Tool selection survives even at 4B params.** BM25 narrows 42 tools to 8 before binding; Gemma picks correctly from that short menu most of the time.
+- **The new abstraction is provider-neutral.** Anthropic, OpenAI, Google, and Ollama all flow through the same `build_chat` / `build_system_message` path with no extra branching at call sites.
+- **Going fully local works.** `AGENT_LLM=gemma4-e4b JUDGE_LLM=qwen-7b` runs end-to-end on the local machine, $0 LLM cost, results still upload to LangSmith.
+
+### Where local lags
+
+- **Render-shape discipline collapses (0.20 vs 0.80).** Gemma understands "call a render" but picks the wrong one most of the time — e.g. emits free text where `render_table` was expected.
+- **Multi-step robustness is weakest.** One Gemma run hit the 12-iteration ceiling and never finished; Opus never does this on the same examples.
+- **Answer completeness suffers.** Even when tools succeed, Gemma's prose answers more often skip cited URLs or stop short on multi-fact questions.
+- **Wall time is ~3.5× slower.** Each Gemma turn is 20–60 s vs Opus's 2–10 s; with 3–5 turns per query, a 50-example pass projects to ~90 min local vs ~30 min on Opus.
+
+### Why the gap exists
+
+- **Model size.** Gemma 4 e4b is ~4 B effective params; frontier cloud models are in the hundreds of billions. Tool-calling and structured-output skills scale strongly with size.
+- **Training mix.** Frontier cloud models are RLHF-tuned heavily on tool-calling and JSON-shape output; general-purpose local models get less of this.
+- **Prompt length sensitivity.** The 1900-token system prompt + 8 bound tool definitions is digestible for Opus; smaller models get distracted by the same input.
+
+### Judge calibration is real
+
+The same Gemma agent outputs scored **0.44 from Haiku** and **0.68 from Qwen 7B** — a 24-point gap. Different judges, different rubric interpretation, not directly comparable. Pin a single judge across all experiments you want to compare.
+
+### Recommendation matrix
+
+| Use case | Pick |
+|---|---|
+| Cheap dev iteration, willing to accept quality dip | Local Gemma (free, ~90 min/50-eval) |
+| Production demos or interview talking points | **Opus or Sonnet** |
+| Best price/quality compromise | **gpt-4o-mini or Sonnet** (~$0.55 + ~15 min for 50 examples) |
+| Air-gapped / offline / privacy-critical | Local Gemma + local Qwen judge |
+
+### Reproduce these numbers
+
+```bash
+# Opus baseline
+AGENT_LLM=opus uv run python scripts/run_experiment.py --limit 5 --prefix exp-opus
+
+# Local Gemma + cloud Haiku judge
+AGENT_LLM=gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
+  uv run python scripts/run_experiment.py --limit 5 --prefix exp-gemma4-e4b
+
+# Fully local (agent + judge)
+AGENT_LLM=gemma4-e4b JUDGE_LLM=qwen-7b OLLAMA_KEEP_ALIVE=24h \
+  uv run python scripts/run_experiment.py --limit 5 --prefix exp-gemma-local-judge
+```
+
+LangSmith experiment IDs from this run:
+- `exp-prompts-v2-689b30e1` — Opus baseline
+- `exp-gemma4-e4b-1ac47263` — Gemma agent, Haiku judge
+- `exp-gemma-local-judge-a5ce86d3` — Gemma agent, Qwen judge
+
+---
+
+
 The eval runner (`scripts/run_experiment.py`) takes the agent's [10/50-example golden dataset](../src/deepresearch/eval/dataset.py) and scores each run with four metrics:
 
 | Scorer | Type | Cost | What it measures |
