@@ -444,6 +444,8 @@ AGENT_LLM=sonnet uv run research "your query"     # env var
 
 Defaults: agent → `opus`, judge → `haiku`. The judge has its own selector — `JUDGE_LLM=sonnet uv run python scripts/run_experiment.py --limit 5` runs the agent on Opus and the eval judge on Sonnet.
 
+> Want to compare providers head-to-head on the same dataset? See [**docs/testing-providers.md**](docs/testing-providers.md) for the full runbook — commands, costs, and reference scores for Anthropic Claude, OpenAI ChatGPT, and local Gemma via Ollama.
+
 ### Provider extras
 
 Anthropic and the core deps are installed by default. Other providers ship as optional extras so you only install what you need:
