@@ -23,6 +23,16 @@ dependencies = [
     "jinja2>=3.1",
 ]
 
+[project.optional-dependencies]
+ollama = ["langchain-ollama>=0.2"]
+openai = ["langchain-openai>=0.2"]
+google = ["langchain-google-genai>=2.0"]
+all-llms = [
+    "langchain-ollama>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-google-genai>=2.0",
+]
+
 [project.scripts]
 research = "deepresearch.cli:main"
 
