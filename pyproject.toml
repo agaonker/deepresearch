@@ -44,6 +44,7 @@ dev-dependencies = [
     "langgraph-cli[inmem]>=0.1.50",
     "ruff>=0.6",
     "mypy>=1.11",
+    "markdown>=3.10.2",
 ]
 
 [tool.ruff]
