@@ -56,3 +56,8 @@ Single-agent ReAct loop on LangGraph. The same compiled graph (`src/deepresearch
 - **Type-checking strictness:** `mypy` runs with `check_untyped_defs`, `no_implicit_optional`, `warn_unused_ignores`, `warn_redundant_casts`. Use `from __future__ import annotations` (every module does). `ignore_missing_imports = true` is set globally — don't add per-import ignores unless mypy actually complains.
 - **Ruff:** line length 110; `E501` and `B008` are ignored. `B008` matters because LangChain decorators wrap functions at module load.
 - **System prompt:** the agent is *required* to finish with a render tool. If you change `_SYSTEM_PROMPT` in `graph/nodes.py`, preserve that contract or the CLI's painted output goes away.
+
+## Design System
+Always read `DESIGN.md` before touching anything in `src/deepresearch/streaming/` (painters, tokens) or `src/deepresearch/tools/render.py` (render-tool emitters). All box-drawing characters, color tokens, hierarchy rules, and the survives-copy-paste rule are defined there. Do not deviate without explicit user approval.
+
+New render kinds require three coordinated edits (see "Two parallel concepts" above) AND must follow the painter conventions in `DESIGN.md`: sharp single-line box by default, semantic color only, never colorize box-drawing characters, preserve user-supplied case.
