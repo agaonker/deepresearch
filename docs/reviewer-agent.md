@@ -1,8 +1,9 @@
 # Reviewer Agent — Design Sketch
 
-Directional validation of Apple's "Reinforced Agent: Inference-time Feedback for Tool-Calling LLMs" ([paper](https://machinelearning.apple.com/research/reinforced-agent-inference-feedback)) inside this repo's LangGraph ReAct loop.
+> **🅿 STATUS: PARKED**
+> Implementation paused pending compute sponsorship. The pre-flight gate (Phase 0) costs ~$3-4 in API calls; the full experiment is ~$25-65. Picking this back up requires either a sponsor for the eval spend OR a willingness to absorb the cost out of pocket. All architectural decisions below are still load-bearing; resume by running Phase 0 first.
 
-**Status:** sketch only. No code yet. Implementation gated on user approval.
+Directional validation of Apple's "Reinforced Agent: Inference-time Feedback for Tool-Calling LLMs" ([paper](https://machinelearning.apple.com/research/reinforced-agent-inference-feedback)) inside this repo's LangGraph ReAct loop.
 
 ---
 
@@ -19,6 +20,52 @@ Headline numbers: +5.5% on irrelevance detection (BFCL), +7.1% on multi-turn (τ
 **Key insight:** the reviewer is *decoupled* from the agent. It can be a different (often smaller, more specialized) model, optimized independently.
 
 ---
+
+## Where errors can come from — the BM25 / LLM-pick decomposition
+
+This was the load-bearing question that shaped the experiment design. Tool-call errors in our pipeline come from two distinct stages:
+
+```
+query → BM25(catalog, k=8) → LLM picks 1 from 8 → ToolNode runs it
+         ┌──────────────┐    ┌──────────────────┐
+         │ retrieval     │    │ selection         │
+         │ accuracy      │    │ accuracy          │
+         └──────────────┘    └──────────────────┘
+```
+
+1. **BM25 miss** — the right tool wasn't in the top-8. Neither LLM nor reviewer can recover; the right tool was never on the table.
+2. **LLM mis-pick** — the right tool was in the top-8, but the LLM picked a different one.
+
+**The reviewer can only fix #2.** It inspects what the LLM picked from a set BM25 already filtered. So the reviewer's *maximum possible* helpfulness is bounded by the LLM mis-pick rate. If our agent already picks correctly from the BM25 top-8 ~95% of the time, the addressable error surface is ~5% — small, and any harmfulness easily eats it.
+
+**Two metrics that matter before building anything:**
+
+```
+P(BM25 includes right tool)        ← test_bm25_includes_expected_tools already measures this
+P(LLM picks right tool | BM25 hit) ← Phase 0 below measures this
+```
+
+The product of these is the end-to-end accuracy ceiling for an agent-only pipeline. The reviewer can only attack errors where `BM25 hit AND LLM miss` — the "LLM had the right answer in its candidate set and still picked wrong" cases.
+
+## Phase 0 — Pre-flight gate (haiku-only, ~$3-4)
+
+**Run this before any reviewer code lands.** It tells you whether the entire experiment is worth running.
+
+1. Run all 50 golden queries through `haiku-4-5` via the existing CLI, 1 rep each (`temperature=0` keeps it near-deterministic). Use `--llm haiku`.
+2. For each query: was the expected `render_*` tool actually called? Was BM25's top-8 hit?
+3. Compute `P(haiku picks right | BM25 hit)`.
+
+**Decision rule:**
+
+| Result for haiku                       | Action                                                                   |
+|----------------------------------------|--------------------------------------------------------------------------|
+| ≥ 0.95                                 | Stop. Smarter models are at least this high → no addressable error surface → scrap or pivot to BM25 reranker (different class of error). |
+| 0.85 – 0.95                            | Borderline. Run sonnet too (~$10 more) before deciding.                  |
+| < 0.85                                 | Real error surface exists. Proceed to Phase 1 with confidence.           |
+
+**Why haiku-only for the pre-flight:** haiku has the lowest tool-call accuracy of the three Anthropic-registered models, so it's the **lower bound** on LLM-pick accuracy across our lineup. If even haiku is ≥ 0.95, opus and sonnet are definitely ≥ 0.95 too — no error surface anywhere. This is a $3 binary "is the experiment worth running" check.
+
+**Caveat:** haiku-only is for the *pre-flight*, not the reviewer experiment itself. The reviewer experiment needs the asymmetric pairings in Phase 1 (see model-pairing matrix below) — self-review by the same model (haiku reviewing haiku) is the least informative cell in the matrix.
 
 ## How it maps to this repo
 
@@ -124,7 +171,25 @@ Both metrics need ground-truth `t*`. The existing eval set's `expected_tools` fi
 
 ## Model-pairing matrix
 
-The paper's interesting finding is that a **smaller/different** reviewer can guide a larger agent. We'd test that asymmetry directly. Initial matrix (5 cells, not all 25):
+The paper's interesting finding is that a **smaller/different** reviewer can guide a larger agent. The specific pairing the paper used was **o3-mini reviewer + GPT-4o agent** — a small *reasoning* model reviewing a larger general model. That's the load-bearing asymmetry, not just "small vs large."
+
+### Mapping the paper's pairing to Anthropic
+
+| Paper            | Anthropic equivalent                                   |
+|------------------|--------------------------------------------------------|
+| GPT-4o agent     | **sonnet-4-6** (closest cost+capability tier) or opus-4-7 (pure capability) |
+| o3-mini reviewer | **haiku-4-5 with extended thinking enabled** — Anthropic ships thinking as a feature flag, not a separate SKU |
+
+**Anthropic doesn't have an o3-mini-equivalent SKU.** It ships `thinking={"type": "enabled", "budget_tokens": N}` as a per-call parameter on any 4.x model. So the closest analog to "small reasoning model" is `haiku-4-5 + thinking_on`. Without thinking, you're testing a small *general* reviewer, not a small *reasoning* reviewer — and the paper's headline 3:1 ratio came from the reasoning asymmetry.
+
+**Project-state caveat:** `grep -rn "thinking|reasoning_effort|extended_thinking" src/deepresearch/` currently returns zero hits. Enabling thinking requires ~30 minutes of work:
+- Add `supports_thinking: bool` field to `LLMSource` in `llm.py`
+- Pass `thinking={"type": "enabled", "budget_tokens": N}` to `ChatAnthropic` in `_build_anthropic` when enabled
+- Add a `--reviewer-thinking-budget <N>` CLI flag
+
+Without this, the experiment doesn't faithfully replicate the paper.
+
+### Pairings to run (5 cells)
 
 | agent                | reviewer    | hypothesis                                      |
 |----------------------|-------------|-------------------------------------------------|
@@ -140,15 +205,16 @@ Cost note: every cell except `(opus, none)` doubles inference *per turn that has
 
 ## Eval shape
 
-### Phase 1 — measurable on existing labeled set
+### Phase 1 — full matrix on existing labeled set (only if Phase 0 shows error surface)
 
-- Existing 10-query golden set in `tests/test_eval.py`.
+- Existing **50-query** golden set in `src/deepresearch/eval/dataset.py` (asserted by `tests/test_eval.py:25`).
 - Extend each query's `expected_tools` from a set of names to `{name: str, required_args: dict}`.
-- Run the 5-cell matrix with **K=5 replications per cell** under the paired design (Section 1 above).
-- Compute helpfulness, harmfulness, ratio, net_lift, overhead×, plus McNemar p-values and bootstrap 95% CIs per pairing (Sections 2-4).
+- Wire extended thinking on the reviewer (haiku-with-thinking — see Anthropic mapping above).
+- Run the 5-cell matrix with **K=3 replications per cell** under the paired design (Section 1 above). K=3 is enough at `temperature=0`; drop to K=1 if a 10-query sample shows < 5% disagreement across reps.
+- Compute helpfulness, harmfulness, ratio, net_lift, overhead×, plus McNemar p-values and bootstrap 95% CIs per pairing.
 - Publish the table from Section 7 to `docs/reviewer-agent-results.md`.
 - **Decision gate:** apply the pre-registered rule (Section 6) — any pairing hitting `ratio ≥ 2.0`, `p < 0.10`, `overhead ≤ 1.5×` triggers Phase 2. Below that, we either drop the project or move to Phase 1b (judge-graded scaling).
-- **Honest caveat on n=10:** we'll detect large effects (ratio ≥ 3) reliably, medium effects borderline, small effects not at all. We're answering "does the pattern *work at all* in this codebase," and "what's the cost/benefit shape" — not "do Apple's specific numbers replicate."
+- **n=50 power:** detects ratio ≥ 2.0 with p < 0.10 reliably, ratio ~1.5 borderline. Small absolute deltas (1-3%) like the paper's GEPA increment still need Phase 3 (BFCL, n≈2000).
 
 ### Phase 2 — local benchmark (if Phase 1 is promising)
 
@@ -203,15 +269,28 @@ Pair this with **bootstrap 95% CIs** on helpfulness, harmfulness, ratio, and net
 
 ### 4. Power realism — what we can and can't detect
 
-With n=10 paired queries:
+With **n=50** paired queries (the actual golden set size in `src/deepresearch/eval/dataset.py`):
 
-| Effect size                                      | Detectable at p<0.05? | Confidence interval width |
-|--------------------------------------------------|-----------------------|---------------------------|
-| Reviewer fixes 5/5 wrong queries (huge effect)   | yes                   | ±20% on helpfulness       |
-| Reviewer fixes 3/5 wrong queries (medium)        | borderline            | ±30%                      |
-| Reviewer fixes 1/5 wrong queries (small)         | no                    | ±35%                      |
+| Effect size                                       | Detectable at p<0.10? | Confidence interval width |
+|---------------------------------------------------|-----------------------|---------------------------|
+| Reviewer fixes 10/15 wrong queries (huge effect)  | yes                   | ±10% on helpfulness       |
+| Reviewer fixes 6/15 wrong queries (medium)        | yes                   | ±15%                      |
+| Reviewer fixes 2/15 wrong queries (small)         | borderline            | ±18%                      |
+| Reviewer fixes 1/15 wrong queries (~paper's GEPA delta) | no             | ±22%                      |
 
-**Implication:** n=10 detects "the reviewer pattern fundamentally helps or hurts." It does not detect 5-10% absolute deltas like the paper reports. To match the paper's CI tightness we need Phase 2 (n≈50) or Phase 3 (BFCL, n≈2000).
+**Implication:** n=50 detects medium-to-large effects (ratio ≥ 2.0) with reasonable confidence. Detecting the paper's 5.5% irrelevance delta or its 1.5-2.8% GEPA delta still needs Phase 3 (BFCL, n≈2000) — those are small-effect-size tests our golden set isn't large enough to nail. We're answering "does the reviewer pattern produce a meaningful lift in this codebase," not "do Apple's specific numbers replicate."
+
+### 4b. Realistic cost estimate (resume-time budget)
+
+| stage             | model lineup                                  | rough cost | wall clock |
+|-------------------|-----------------------------------------------|-----------|------------|
+| Phase 0 preflight | haiku only, 50 queries, 1 rep                 | ~$3-4     | ~15 min    |
+| Phase 1 full      | opus + sonnet + haiku, 50 queries, K=3 reps   | ~$25-55   | ~75 min    |
+| Phase 1 minimal   | sonnet + haiku only (drop opus), K=1 rep      | ~$5-10    | ~25 min    |
+
+**Caching nuance:** Anthropic prompt caching is wired up only for the **system prompt** (`llm.py:281-295`, `build_system_message` adds `cache_control: {"type": "ephemeral"}`). Tool definitions (~2000 tokens per call, re-sent every call) are NOT cached — `bind_tools` in `graph/nodes.py:40` doesn't pass `cache_control`. So caching saves ~30% off input cost, not the 80% you'd see if tool defs were also cached. The corrected numbers above assume that real ~30% savings.
+
+**Cost optimization TODO:** wrapping the bound tool definitions in `cache_control: ephemeral` would cut another ~30-50% off the Phase 1 budget. Requires either a custom binding or switching to the raw Anthropic SDK for the tool block (LangChain's `bind_tools` doesn't expose `cache_control` directly). One-line change at minimum, half-day if it needs a clean abstraction. Logged as a P3 follow-up.
 
 ### 5. Cost & latency as first-class metrics
 
@@ -236,14 +315,14 @@ Before running anything, commit to thresholds so the result isn't post-hoc ratio
 - **Investigate further** if: 1.0 ≤ ratio < 2.0 (signal but not strong enough).
 - **Abandon** if: ratio < 1.0 (reviewer is net negative) OR overhead > 2.5× regardless of ratio.
 
-The p-value bar is loose (0.10, not 0.05) because n=10 power is low — we're using it as a sanity filter, not a confirmatory test.
+The p-value bar is loose (0.10, not 0.05) because at n=50 we're using it as a sanity filter on direction, not a confirmatory test on a specific effect magnitude.
 
 ### 7. Reporting format
 
 Every prototype run produces `docs/reviewer-agent-results.md` with this table at the top:
 
 ```
-Reviewer Agent — Phase 1 Results (n=10, K=5 reps)
+Reviewer Agent — Phase 1 Results (n=50, K=3 reps)
 ┌────────────┬────────────┬─────────────┬─────────────┬───────┬─────────┬───────────┬──────────┐
 │ agent      │ reviewer   │ helpfulness │ harmfulness │ ratio │ net_lift│ overhead× │ p (Mcnem)│
 ├────────────┼────────────┼─────────────┼─────────────┼───────┼─────────┼───────────┼──────────┤
@@ -290,7 +369,7 @@ This gets us to n≈100 without expanding the human-labeled set, at the cost of 
 
 - **Reviewer adds latency without value on easy queries.** ~80% of our golden set is "obviously right" calls. Reviewer pays cost on all of them; helps on ~20%. Total wall-clock per session ↑.
 - **Reviewer-blocks-correct (harmfulness) is the killer failure mode.** A 1.5:1 ratio is borderline; below 1:1 the system is worse than nothing. Need to surface this clearly in eval.
-- **n=10 noise floor.** Any helpfulness number ± noise from 10 queries has a 95% CI of roughly ±20-30 percentage points. We can publish the direction but not the magnitude.
+- **n=50 power ceiling.** Detects medium-to-large effects (ratio ≥ 2.0). Does NOT detect the paper's small-delta findings (5.5% irrelevance, 1.5-2.8% GEPA) — those need BFCL-scale n.
 - **Render-tool exclusion is load-bearing.** If review fires on the final `render_*` call and blocks it, the CLI prints raw text instead of a painted box. Test coverage must catch this.
 - **Reviewer prompt drift.** The reviewer's prompt is the whole product. GEPA-style optimization (the paper's +2%) is a separate workstream we're explicitly deferring.
 
@@ -299,9 +378,10 @@ This gets us to n≈100 without expanding the human-labeled set, at the cost of 
 ## Phased plan
 
 1. **Sketch (this doc)** — done.
-2. **Prototype** — `reviewer.py` node + 5-cell matrix + 2 scorers on the existing 10-query set. Half a day with CC. Run, publish results table, decide whether to continue.
-3. **Expand to 50 queries** — if Phase 2 shows ratio > 1.5 on at least one pairing, grow the golden set. 1-2 days. This gets us a defensible blog post.
-4. **BFCL adapter** — only if 3 is conclusive. 2-3 days. Direct comparability with the paper.
+2. **Phase 0 — pre-flight** — haiku-only, no reviewer, measure `P(LLM picks right | BM25 hit)` on the 50-query set. ~$3-4 / ~15 min wall clock. Decision gate: if haiku ≥ 0.95, scrap or pivot to BM25 reranker; else proceed.
+3. **Phase 1 — full matrix prototype** — `reviewer.py` node + 5-cell matrix + 2 scorers on the 50-query set, with extended thinking wired for the haiku reviewer. ~$25-55. Half a day with CC. Run, publish results table, decision gate: if any pairing hits ratio ≥ 2.0 / p < 0.10 / overhead ≤ 1.5×, proceed; else stop or run Phase 1b.
+4. **Phase 1b — judge-graded scaling** (optional) — only if Phase 1 shows borderline signal. Generate 100+ unlabeled queries, run both regimes, use opus-as-judge to grade. ~$50-80. 1 day.
+5. **Phase 2 — BFCL adapter** (aspirational) — only if Phase 1 (or 1b) is conclusive. Pull Berkeley Function Call Leaderboard, build adapter for our render-tool catalog. 2-3 days. Direct comparability with the paper.
 
 Each phase has a gate: continue only if the prior phase produces signal. Don't sink time into BFCL before the prototype shows that reviewer agents help *at all* in our setting.
 
@@ -336,6 +416,18 @@ No changes to `streaming/`, `tools/`, or `prompts/` are expected.
 
 ## What this doc is and isn't
 
-It **is**: an architectural sketch with a pre-registered quantitative measurement plan — paired design, K=5 replications, McNemar p-values, bootstrap CIs on helpfulness/harmfulness/ratio, plus cost & latency overhead. Sufficient to drive a 5-cell prototype that produces a defensible measurement (not a vibe-check).
+It **is**: an architectural sketch with a pre-registered quantitative measurement plan — paired design, K=3 replications, McNemar p-values, bootstrap CIs on helpfulness/harmfulness/ratio, plus cost & latency overhead. A Phase 0 pre-flight gate ($3-4) that decides whether the full experiment is worth running. A faithful Anthropic-side mapping of the paper's o3-mini + GPT-4o pairing (haiku-with-thinking + sonnet).
 
-It **isn't**: a replication of the paper's headline numbers. Our n=10 labeled set caps detectable effect sizes to medium-or-larger. To match the paper's CI tightness we need Phase 2 (n≈50) or Phase 3 (BFCL, n≈2000). The framing for Phase 1 results: "we measured the reviewer pattern with the following ratio, CI, p-value, and cost overhead in a small LangGraph ReAct agent." Not "we replicated Apple's numbers."
+It **isn't**: a replication of the paper's headline numbers. Our n=50 labeled set detects medium-to-large effects (ratio ≥ 2.0) reliably, but not the paper's small-delta findings (5.5% irrelevance, 1.5-2.8% GEPA). For that you need Phase 2 (BFCL, n≈2000). The framing for Phase 1 results: "we measured the reviewer pattern with the following ratio, CI, p-value, and cost overhead in a small LangGraph ReAct agent." Not "we replicated Apple's numbers."
+
+## Resume checklist
+
+When sponsorship lands, work through this in order:
+
+- [ ] Read this doc top to bottom; confirm the BM25-vs-LLM-pick decomposition still holds (i.e., that the agent + retriever code in `src/deepresearch/graph/` and `src/deepresearch/tools/retriever.py` hasn't structurally changed).
+- [ ] Run Phase 0 first. Hard gate. Spend $3-4 before spending $50.
+- [ ] If Phase 0 passes the gate, wire extended thinking into `llm.py:LLMSource` (add `supports_thinking: bool` field + pass `thinking={"type":"enabled","budget_tokens":N}` to `ChatAnthropic` in `_build_anthropic`).
+- [ ] Build the `reviewer_node` per the contract in the "Reviewer contract" section. ALLOW/BLOCK only; defer EDIT to v2.
+- [ ] Resolve the 5 open questions in the "Open questions" section *before* writing the reviewer prompt (especially #1: does the reviewer see BM25 candidates? #3: don't review render tools).
+- [ ] Run Phase 1 with the pre-registered decision rule. No post-hoc threshold massaging.
+- [ ] Publish the results table to `docs/reviewer-agent-results.md` regardless of outcome — a clean negative result is valuable.
