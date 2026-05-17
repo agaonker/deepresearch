@@ -225,7 +225,14 @@ def _build_openai(source: LLMSource, *, max_tokens: int, streaming: bool) -> Bas
             "OpenAI provider requires the `openai` extra. Install with "
             "`uv sync --extra openai` (or `--extra all-llms`)."
         ) from e
-    return ChatOpenAI(model=source.model, max_tokens=max_tokens, streaming=streaming)
+    # langchain-openai 1.x dropped `max_tokens` from the constructor signature.
+    # Pass it through `model_kwargs` (typed Dict[str, Any]) so it reaches the
+    # request body without tripping mypy on the call-arg.
+    return ChatOpenAI(
+        model=source.model,
+        streaming=streaming,
+        model_kwargs={"max_tokens": max_tokens},
+    )
 
 
 def _build_google(source: LLMSource, *, max_tokens: int, streaming: bool) -> BaseChatModel:
