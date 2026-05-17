@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.prebuilt import ToolNode
 
 from deepresearch.graph.state import AgentState
-from deepresearch.llm import build_chat, build_system_message, resolve
+from deepresearch.llm import build_chat, build_system_message, prepare_tools_for_caching, resolve
 from deepresearch.prompts import render_prompt
 from deepresearch.tools.catalog import ALL_DATA_TOOLS
 from deepresearch.tools.render import ALL_RENDER_TOOLS
@@ -37,7 +37,13 @@ def agent_node(state: AgentState) -> dict[str, Any]:
     top_tools = _RETRIEVER.search(query, k=8)
 
     source = resolve("agent")
-    llm = build_chat(source).bind_tools(top_tools)
+    # `prepare_tools_for_caching` wraps the last tool with cache_control:ephemeral
+    # for Anthropic providers (no-op elsewhere). Currently a no-op at the wire
+    # level too: langchain-anthropic 1.4.2 strips cache_control during request
+    # serialization. Keeping the call here so caching auto-activates when that
+    # passthrough is fixed upstream. See docs/prompt-caching.md.
+    cacheable_tools = prepare_tools_for_caching(top_tools, source)
+    llm = build_chat(source).bind_tools(cacheable_tools)
     system_message = build_system_message(render_prompt("system"), source)
     response = llm.invoke([system_message, *messages])
 
