@@ -43,10 +43,12 @@ The full design system that drives every render kind lives in [DESIGN.md](DESIGN
 | **M2** | LangSmith wiring (`@traceable`, run metadata) | ✅ Done |
 | **M3** | `langgraph dev` Studio integration | ✅ Done |
 | **M3.5** | Code-quality pass (type hints, ruff + mypy clean) | ✅ Done |
-| **M4** | Eval dataset (10 golden queries, pytest harness) | ✅ Done |
+| **M4** | Eval dataset (50 golden queries, pytest harness) | ✅ Done |
+| **M4.5** | Brutalist render design system (`DESIGN.md`, unicode box-drawing, semantic ANSI palette, survives-copy-paste) | ✅ Done |
 | **M5** | mem0 cross-session memory | 🔜 Parked (see plan file) |
+| **M6** | Reviewer agent (Apple RAIF paper validation) | 🅿 Parked pending sponsor — see [PR #8](https://github.com/agaonker/deepresearch/pull/8) |
 
-**36 data tools + 6 render tools** in the catalog today. Tests: **50/50 passing** (35 unit + 15 eval).
+**36 data tools + 6 render tools** in the catalog today. Tests: **129/129 passing** (74 unit + 55 eval, where the eval suite parameterizes over the 50 golden queries plus a handful of meta-checks).
 
 ---
 
