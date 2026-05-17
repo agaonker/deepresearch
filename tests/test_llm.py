@@ -11,6 +11,7 @@ from deepresearch.llm import (
     build_chat,
     build_system_message,
     get_source,
+    prepare_tools_for_caching,
     resolve,
 )
 
@@ -167,3 +168,90 @@ def test_build_chat_ollama_returns_chat_ollama():
     src = SOURCES["gemma4-e4b"]
     chat = build_chat(src, max_tokens=10, streaming=False)
     assert getattr(chat, "model", None) == src.model
+
+
+# ---------------------------------------------------------------------------
+# prepare_tools_for_caching
+# ---------------------------------------------------------------------------
+
+def _sample_tools():
+    """A small subset of real catalog tools (real BaseTool objects)."""
+    from deepresearch.tools.catalog import ALL_DATA_TOOLS
+    from deepresearch.tools.render import ALL_RENDER_TOOLS
+
+    return ALL_DATA_TOOLS[:2] + ALL_RENDER_TOOLS[:1]
+
+
+def test_prepare_tools_caching_anthropic_marks_last_tool():
+    tools = _sample_tools()
+    out = prepare_tools_for_caching(tools, SOURCES["opus"])
+    assert len(out) == len(tools)
+    # All entries are dicts with Anthropic tool shape.
+    for entry in out:
+        assert isinstance(entry, dict)
+        assert "name" in entry and "input_schema" in entry
+    # Only the LAST tool carries cache_control.
+    assert "cache_control" not in out[0]
+    assert "cache_control" not in out[1]
+    assert out[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_prepare_tools_caching_anthropic_preserves_order():
+    tools = _sample_tools()
+    out = prepare_tools_for_caching(tools, SOURCES["sonnet"])
+    expected_names = [t.name for t in tools]
+    got_names = [entry["name"] for entry in out]
+    assert got_names == expected_names
+
+
+def test_prepare_tools_caching_ollama_passthrough():
+    tools = _sample_tools()
+    out = prepare_tools_for_caching(tools, SOURCES["gemma4-e4b"])
+    # Ollama provider: returned unchanged (still BaseTool objects, not dicts).
+    assert list(out) == list(tools)
+    for entry in out:
+        assert hasattr(entry, "name")  # BaseTool attr, not dict["name"]
+
+
+def test_prepare_tools_caching_openai_passthrough():
+    tools = _sample_tools()
+    out = prepare_tools_for_caching(tools, SOURCES["gpt-4o"])
+    # OpenAI uses server-side prefix caching; no client-side cache_control needed.
+    assert list(out) == list(tools)
+
+
+def test_prepare_tools_caching_empty_list_returned_unchanged():
+    out = prepare_tools_for_caching([], SOURCES["opus"])
+    assert list(out) == []
+
+
+def test_prepare_tools_caching_anthropic_no_cache_provider_passes_through():
+    # Build an Anthropic source variant with caching disabled.
+    src = LLMSource(
+        name="anthropic-nocache",
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        supports_prompt_cache=False,
+    )
+    tools = _sample_tools()
+    out = prepare_tools_for_caching(tools, src)
+    # Even on Anthropic, caching off => no transformation.
+    assert list(out) == list(tools)
+
+
+def test_prepare_tools_caching_survives_bind_tools():
+    """End-to-end: the cache_control breakpoint must reach ChatAnthropic.bind_tools
+    and stay attached to the final tool in the bound runnable's kwargs.
+
+    Guards against the failure mode where LangChain re-formats dicts and drops
+    keys it doesn't recognize."""
+    tools = _sample_tools()
+    cacheable = prepare_tools_for_caching(tools, SOURCES["opus"])
+    llm = build_chat(SOURCES["haiku"], max_tokens=10, streaming=False)
+    bound = llm.bind_tools(cacheable)
+    bound_tools = getattr(bound, "kwargs", {}).get("tools", [])
+    assert len(bound_tools) == len(tools)
+    # First N-1 tools have no cache_control; last one does.
+    for entry in bound_tools[:-1]:
+        assert "cache_control" not in entry
+    assert bound_tools[-1].get("cache_control") == {"type": "ephemeral"}

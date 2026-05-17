@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -302,11 +302,62 @@ def build_system_message(text: str, source: LLMSource) -> SystemMessage:
     return SystemMessage(content=text)
 
 
+# ---------------------------------------------------------------------------
+# Tool-definition shaping (prompt caching extension)
+# ---------------------------------------------------------------------------
+
+def prepare_tools_for_caching(
+    tools: Sequence[Any], source: LLMSource
+) -> Sequence[Any]:
+    """Return a tool list shaped for prompt caching on the given provider.
+
+    Anthropic + supports_prompt_cache: pre-format every `BaseTool` into an
+    Anthropic tool dict and attach `cache_control: ephemeral` to the LAST one.
+    The intent is to mark the last tool as a cache breakpoint so the Anthropic
+    API caches (system prompt + tool defs) on the next call within the 5-min
+    TTL, at ~10% input rate on the cached prefix.
+
+    **Important — currently a no-op at the wire level.**
+
+    `langchain-anthropic` 1.4.2 strips `cache_control` from dict-typed tool
+    entries during request serialization (`_get_request_payload`). The shape
+    we produce here is correct per Anthropic's API spec, and the dict survives
+    through `bind_tools(...).kwargs["tools"]`, but the actual outgoing HTTP
+    body drops the field. See `scripts/verify_tool_cache.py` and
+    `docs/prompt-caching.md` for evidence and the path forward.
+
+    Kept as a forward-compatible building block: when langchain-anthropic
+    exposes a passthrough path (or this function is rewired to a custom
+    binding), tool-def caching activates without changing the call sites.
+
+    Everything else: return the tool list unchanged. LangChain's `bind_tools`
+    accepts both `BaseTool` objects and pre-formatted dicts, so callers don't
+    need to branch on provider.
+
+    Empty tool list: returned unchanged (no cache breakpoint to add).
+    """
+    if not tools:
+        return tools
+    if source.provider != "anthropic" or not source.supports_prompt_cache:
+        return tools
+    # Lazy import keeps the openai/google/ollama paths from paying the
+    # langchain_anthropic import cost.
+    from langchain_anthropic.chat_models import convert_to_anthropic_tool
+
+    # convert_to_anthropic_tool returns an AnthropicTool TypedDict; treat it
+    # as a plain dict so we can splat additional keys (cache_control) without
+    # tripping the TypedDict's closed schema.
+    tool_dicts: list[dict[str, Any]] = [dict(convert_to_anthropic_tool(t)) for t in tools]
+    tool_dicts[-1]["cache_control"] = {"type": "ephemeral"}
+    return tool_dicts
+
+
 __all__ = [
     "LLMSource",
     "SOURCES",
     "build_chat",
     "build_system_message",
     "get_source",
+    "prepare_tools_for_caching",
     "resolve",
 ]
