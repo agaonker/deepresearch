@@ -6,10 +6,10 @@ import signal
 import sys
 import uuid
 from types import FrameType
-from typing import Any
+from typing import Any, cast
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -60,18 +60,53 @@ def _run_query(graph: CompiledStateGraph, text: str, *, thread_id: str) -> None:
     }
 
     try:
-        for event in graph.stream(initial, config=config, stream_mode="values"):
+        for mode, payload in graph.stream(
+            initial, config=config, stream_mode=["values", "messages"]
+        ):
             if sigstate["cancelled"]:
                 print("[cancelled]", file=sys.stderr)
                 graph.update_state(config, {"cancelled": True})
                 return
-            _print_latest(event)
+            if mode == "messages":
+                _handle_message_chunk(cast(tuple[Any, dict[str, Any]], payload))
+            elif mode == "values":
+                _print_latest(cast(dict[str, Any], payload))
     except KeyboardInterrupt:
         print("[cancelled]", file=sys.stderr)
         return
 
 
 _PRINTED_IDS: set[str] = set()
+_STREAMED_IDS: set[str] = set()  # message ids whose text we already streamed token-by-token
+
+
+def _handle_message_chunk(payload: tuple[Any, dict[str, Any]]) -> None:
+    """Print streaming token chunks from the agent_node LLM call.
+
+    LangGraph's `stream_mode="messages"` yields `(chunk, metadata)` tuples for
+    every token the LLM emits. We print the text portion of each chunk as it
+    arrives, append-only (no redraws), so the user watches the agent reason in
+    real time instead of waiting for the message to complete.
+    """
+    chunk, metadata = payload
+    if not isinstance(chunk, AIMessageChunk):
+        return
+    # Only stream reasoning text from the agent node; tool outputs aren't streamed.
+    if metadata.get("langgraph_node") != "agent":
+        return
+    content = chunk.content
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = _join_blocks(content)
+    else:
+        return
+    if not text:
+        return
+    print(text, end="", flush=True)
+    msg_id = getattr(chunk, "id", None)
+    if msg_id:
+        _STREAMED_IDS.add(msg_id)
 
 
 def _print_latest(state: dict[str, Any]) -> None:
@@ -96,12 +131,20 @@ def _print_latest(state: dict[str, Any]) -> None:
         return
 
     if isinstance(msg, AIMessage):
+        # If we already streamed the body token-by-token, just close the line
+        # and emit the tool-call summary after. Otherwise fall back to the
+        # batched print path (e.g., Ollama or non-streaming providers).
+        if msg_id in _STREAMED_IDS:
+            print()  # flush trailing newline after the streamed chunks
+        else:
+            text = msg.content if isinstance(msg.content, str) else _join_blocks(msg.content)
+            if text.strip():
+                print(text)
         if msg.tool_calls:
-            calls = ", ".join(f"{tc['name']}({_brief_args(tc.get('args', {}))})" for tc in msg.tool_calls)
+            calls = ", ".join(
+                f"{tc['name']}({_brief_args(tc.get('args', {}))})" for tc in msg.tool_calls
+            )
             print(f"[agent → tools] {calls}")
-        text = msg.content if isinstance(msg.content, str) else _join_blocks(msg.content)
-        if text.strip():
-            print(text)
 
 
 def _brief_args(args: dict[str, Any]) -> str:
