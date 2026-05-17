@@ -20,6 +20,20 @@ Six demonstrated capabilities:
 
 ---
 
+## Demo
+
+Haiku driving `render_chart` after a single prompt. Sharp single-line frames, bold cyan title, accent-colored bars, bold numeric values, terminal background untouched.
+
+![render_chart driven by Claude Haiku](docs/images/render-chart-haiku.png)
+
+```bash
+uv run research --llm haiku "show me a chart of approximate input token prices per million for opus, sonnet, and haiku"
+```
+
+The full design system that drives every render kind lives in [DESIGN.md](DESIGN.md).
+
+---
+
 ## Project status
 
 | Milestone | Scope | Status |
