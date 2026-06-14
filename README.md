@@ -354,6 +354,69 @@ Each emits a `_render::<kind>\n<json>` sentinel that the CLI parses and paints a
 
 ## Architecture
 
+Single-agent **ReAct loop on LangGraph**. The same compiled graph backs both the
+CLI and `langgraph dev` / Studio — only the entry point differs.
+
+### End-to-end request flow
+
+```mermaid
+flowchart TD
+    U(["User input<br/>REPL line or CLI arg"]) --> D{"dispatch()<br/>slash-command parser"}
+
+    D -->|"kind = pure<br/>/help /tools /why"| P["Print output<br/>and exit"]
+    D -->|"kind = expand<br/>/research /compare /summarize"| EX["Rewrite into<br/>richer prompt"]
+    D -->|"kind = passthrough<br/>free text"| PT["Use text as-is"]
+
+    EX --> INIT["Build initial AgentState<br/>messages, iterations=0, cancelled=false"]
+    PT --> INIT
+    INIT --> STREAM["graph.stream(state)<br/>stream_mode = values + messages"]
+
+    STREAM --> GRAPH
+
+    subgraph GRAPH ["LangGraph compiled graph"]
+        direction TB
+        START((START)) --> AGENT
+
+        AGENT["**agent_node**<br/>1. extract latest query<br/>2. BM25 rank catalog → top-8 + ALWAYS_INCLUDE<br/>3. bind_tools on LLM<br/>4. invoke with system prompt"]
+        AGENT --> COND{"should_continue"}
+
+        COND -->|"last msg has tool_calls"| TOOLS["**tool_node** (ToolNode)<br/>execute selected tools in parallel<br/>each returns a string"]
+        COND -->|"no tool_calls<br/>· cancelled<br/>· iterations ≥ 12"| FIN((END))
+
+        TOOLS -->|"ToolMessages appended<br/>(render outputs carry _render:: sentinel)"| AGENT
+    end
+
+    GRAPH --> EMIT["Streamed tokens + final messages"]
+    EMIT --> PAINT{"maybe_paint()<br/>starts with _render:: ?"}
+    PAINT -->|yes| CARD["Paint ASCII card / table / chart /<br/>qa / timeline / tree in terminal"]
+    PAINT -->|no| TXT["Print truncated tool text<br/>or streamed agent reasoning"]
+
+    OBS[/"Observability: LANGCHAIN_TRACING_V2=true<br/>→ one LangSmith trace per run,<br/>nested spans for nodes, BM25 select, dispatch"/]:::note
+
+    classDef note fill:#f6f6f6,stroke:#bbb,stroke-dasharray:4 3,color:#333;
+```
+
+### The LangGraph state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> agent
+    agent --> tools : should_continue == "tools"<br/>(AIMessage has tool_calls)
+    tools --> agent : ToolMessages folded back<br/>into state.messages
+    agent --> [*] : should_continue == "end"<br/>(final text · cancelled · MAX_ITERATIONS=12)
+
+    note right of agent
+        Per turn:
+        • BM25 top-K tool selection
+        • bind_tools + system prompt
+        • LLM emits tool_calls OR final answer
+        • Must finish with one render_* call
+    end note
+```
+
+<details>
+<summary>ASCII fallback (same graph)</summary>
+
 ```
                 ┌──────────────────────┐
    input ─────▶│ slash command parser │
@@ -387,7 +450,7 @@ Each emits a `_render::<kind>\n<json>` sentinel that the CLI parses and paints a
    └───────────────────────────────────────────────────┘
 ```
 
-Same compiled graph runs in both the CLI and Studio — only the entry point differs.
+</details>
 
 ---
 
