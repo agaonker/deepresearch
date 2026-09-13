@@ -10,26 +10,26 @@ uv run research --list-llms       # print the table below at any time
 
 | Source | Provider | Model | Cache | Notes |
 |---|---|---|---|---|
-| `opus` | anthropic | `claude-opus-4-7` | yes | frontier; best tool calling and reasoning |
-| `sonnet` | anthropic | `claude-sonnet-4-6` | yes | cheaper iteration; near-Opus quality |
-| `haiku` | anthropic | `claude-haiku-4-5-20251001` | — | fast/cheap; default judge |
-| `gpt-4o` | openai | `gpt-4o` | auto* | OpenAI flagship multimodal |
-| `gpt-4o-mini` | openai | `gpt-4o-mini` | auto* | OpenAI cheap/fast |
-| `gemini-2-flash` | google | `gemini-2.0-flash` | auto* | Google Gemini 2 flash |
-| `gemma4-e4b` | ollama | `gemma4:e4b` | local | local; tool-call quality lower than Opus |
-| `gemma4-e2b` | ollama | `gemma4:e2b` | local | local; smaller/faster than e4b |
-| `qwen-7b` | ollama | `qwen2.5:7b` | local | reliable tool calling on local hardware |
+| `claude-opus` | anthropic | `claude-opus-4-7` | yes | frontier; best tool calling and reasoning |
+| `claude-sonnet` | anthropic | `claude-sonnet-4-6` | yes | cheaper iteration; near-Opus quality |
+| `claude-haiku` | anthropic | `claude-haiku-4-5-20251001` | — | fast/cheap; default judge |
+| `openai-gpt-4o` | openai | `gpt-4o` | auto* | OpenAI flagship multimodal |
+| `openai-gpt-4o-mini` | openai | `gpt-4o-mini` | auto* | OpenAI cheap/fast |
+| `google-gemini-2-flash` | google | `gemini-2.0-flash` | auto* | Google Gemini 2 flash |
+| `local-gemma4-e4b` | ollama | `gemma4:e4b` | local | local; tool-call quality lower than Opus |
+| `local-gemma4-e2b` | ollama | `gemma4:e2b` | local | local; smaller/faster than e4b |
+| `local-qwen-7b` | ollama | `qwen2.5:7b` | local | reliable tool calling on local hardware |
 
 \* auto = provider does prefix caching server-side without code action; see "Caching" below.
 
 ## Picking a source
 
 ```bash
-uv run research --llm gemma4-e4b "What is 2+2?"   # CLI flag
-AGENT_LLM=sonnet uv run research "your query"     # env var
+uv run research --llm local-gemma4-e4b "What is 2+2?"   # CLI flag
+AGENT_LLM=claude-sonnet uv run research "your query"     # env var
 ```
 
-Defaults: agent → `opus`, judge → `haiku`. The judge has its own selector — `JUDGE_LLM=sonnet uv run python scripts/run_experiment.py --limit 5` runs the agent on Opus and the eval judge on Sonnet.
+Defaults: agent → `claude-opus`, judge → `claude-haiku`. The judge has its own selector — `JUDGE_LLM=claude-sonnet uv run python scripts/run_experiment.py --limit 5` runs the agent on Opus and the eval judge on Sonnet.
 
 > Want to compare providers head-to-head on the same dataset? See [**testing-providers.md**](testing-providers.md) for the full runbook — commands, costs, and reference scores for Anthropic Claude, OpenAI ChatGPT, and local Gemma via Ollama.
 
@@ -69,7 +69,7 @@ Requires `ollama serve` running and the model pulled:
 
 ```bash
 ollama pull gemma4:e4b
-OLLAMA_KEEP_ALIVE=24h uv run research --llm gemma4-e4b "your query"
+OLLAMA_KEEP_ALIVE=24h uv run research --llm local-gemma4-e4b "your query"
 ```
 
 Tool-calling quality on local models is lower than Opus — fine for offline iteration, weaker for demos. The 12-iteration cap (`MAX_ITERATIONS`) protects you from runaway loops.

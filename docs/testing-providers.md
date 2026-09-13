@@ -21,7 +21,7 @@ A 5-example smoke comparison run on 2026-05-10, agent code unchanged across runs
 
 - **Tool selection survives even at 4B params.** BM25 narrows 42 tools to 8 before binding; Gemma picks correctly from that short menu most of the time.
 - **The new abstraction is provider-neutral.** Anthropic, OpenAI, Google, and Ollama all flow through the same `build_chat` / `build_system_message` path with no extra branching at call sites.
-- **Going fully local works.** `AGENT_LLM=gemma4-e4b JUDGE_LLM=qwen-7b` runs end-to-end on the local machine, $0 LLM cost, results still upload to LangSmith.
+- **Going fully local works.** `AGENT_LLM=local-gemma4-e4b JUDGE_LLM=local-qwen-7b` runs end-to-end on the local machine, $0 LLM cost, results still upload to LangSmith.
 
 ### Where local lags
 
@@ -53,14 +53,14 @@ The same Gemma agent outputs scored **0.44 from Haiku** and **0.68 from Qwen 7B*
 
 ```bash
 # Opus baseline
-AGENT_LLM=opus uv run python scripts/run_experiment.py --limit 5 --prefix exp-opus
+AGENT_LLM=claude-opus uv run python scripts/run_experiment.py --limit 5 --prefix exp-opus
 
 # Local Gemma + cloud Haiku judge
-AGENT_LLM=gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
+AGENT_LLM=local-gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
   uv run python scripts/run_experiment.py --limit 5 --prefix exp-gemma4-e4b
 
 # Fully local (agent + judge)
-AGENT_LLM=gemma4-e4b JUDGE_LLM=qwen-7b OLLAMA_KEEP_ALIVE=24h \
+AGENT_LLM=local-gemma4-e4b JUDGE_LLM=local-qwen-7b OLLAMA_KEEP_ALIVE=24h \
   uv run python scripts/run_experiment.py --limit 5 --prefix exp-gemma-local-judge
 ```
 
@@ -100,17 +100,17 @@ LANGCHAIN_PROJECT=deepresearch-agent
 
 ## 1. Anthropic Claude (cloud)
 
-Three Anthropic models registered: `opus`, `sonnet`, `haiku`.
+Three Anthropic models registered: `claude-opus`, `claude-sonnet`, `claude-haiku`.
 
 ```bash
 # Single query — sanity check the path
-uv run research --llm opus "What is the current stock price of NVDA?"
+uv run research --llm claude-opus "What is the current stock price of NVDA?"
 
 # 5-example eval (~$0.30 on opus, ~$0.05 on sonnet, ~$0.01 on haiku)
-AGENT_LLM=opus uv run python scripts/run_experiment.py --limit 5 --prefix exp-opus
+AGENT_LLM=claude-opus uv run python scripts/run_experiment.py --limit 5 --prefix exp-opus
 
 # Full 50-example eval (~$2.75 on opus)
-AGENT_LLM=opus uv run python scripts/run_experiment.py --limit 50 --prefix exp-opus-full
+AGENT_LLM=claude-opus uv run python scripts/run_experiment.py --limit 50 --prefix exp-opus-full
 ```
 
 Reference scores from PR #5 / PR #6 (5-example smoke):
@@ -122,11 +122,11 @@ Reference scores from PR #5 / PR #6 (5-example smoke):
 | `iterations_used` | 0.76 |
 | `answer_correctness` | 0.68 |
 
-Prompt caching is on automatically for `opus` and `sonnet` (per [the registry](../src/deepresearch/llm.py)). The `anthropic-beta: prompt-caching-2024-07-31` header and the `cache_control: ephemeral` block on the system message land your system prompt in the 5-minute cache — confirmed live with `cache_read_input_tokens ≈ 4878` on every call after the first.
+Prompt caching is on automatically for `claude-opus` and `claude-sonnet` (per [the registry](../src/deepresearch/llm.py)). The `anthropic-beta: prompt-caching-2024-07-31` header and the `cache_control: ephemeral` block on the system message land your system prompt in the 5-minute cache — confirmed live with `cache_read_input_tokens ≈ 4878` on every call after the first.
 
 ## 2. OpenAI ChatGPT (cloud)
 
-Two OpenAI models registered: `gpt-4o`, `gpt-4o-mini`.
+Two OpenAI models registered: `openai-gpt-4o`, `openai-gpt-4o-mini`.
 
 ```bash
 # Install the OpenAI extra (langchain-openai)
@@ -138,17 +138,17 @@ echo 'OPENAI_API_KEY=sk-...' >> .env
 
 ```bash
 # Single query
-uv run research --llm gpt-4o-mini "What is the current stock price of NVDA?"
+uv run research --llm openai-gpt-4o-mini "What is the current stock price of NVDA?"
 
 # 5-example eval (~$0.05 on gpt-4o-mini, ~$0.30 on gpt-4o)
-AGENT_LLM=gpt-4o-mini uv run python scripts/run_experiment.py --limit 5 --prefix exp-gpt-4o-mini
+AGENT_LLM=openai-gpt-4o-mini uv run python scripts/run_experiment.py --limit 5 --prefix exp-gpt-4o-mini
 ```
 
 OpenAI auto-caches identical prefixes ≥1024 tokens server-side — no code action, no header — and surfaces the hit count under `usage.prompt_tokens_details.cached_tokens`.
 
 ## 3. Local Gemma via Ollama (free)
 
-Three local models registered: `gemma4-e4b`, `gemma4-e2b`, `qwen-7b`.
+Three local models registered: `local-gemma4-e4b`, `local-gemma4-e2b`, `local-qwen-7b`.
 
 ```bash
 # Install the Ollama extra
@@ -161,15 +161,15 @@ ollama pull gemma4:e4b
 
 ```bash
 # Single query — agent runs entirely on your machine
-OLLAMA_KEEP_ALIVE=24h uv run research --llm gemma4-e4b \
+OLLAMA_KEEP_ALIVE=24h uv run research --llm local-gemma4-e4b \
   "What is the current stock price of NVDA?"
 
 # 5-example eval — agent free, Haiku judge ~$0.03 total
-AGENT_LLM=gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
+AGENT_LLM=local-gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
   uv run python scripts/run_experiment.py --limit 5 --prefix exp-gemma4-e4b
 
 # Or completely free — programmatic scorers only, skip Haiku
-AGENT_LLM=gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
+AGENT_LLM=local-gemma4-e4b OLLAMA_KEEP_ALIVE=24h \
   uv run python scripts/run_experiment.py --limit 5 --no-llm-judge \
   --prefix exp-gemma4-free
 ```
@@ -211,10 +211,10 @@ Each `--prefix` you used becomes one column in the comparison view. Tip: prefix 
 | 5 examples | Opus | $0.30 | 10–30 s/run |
 | 5 examples | Sonnet | $0.05 | 5–15 s/run |
 | 5 examples | Haiku | $0.01 | 3–10 s/run |
-| 5 examples | gpt-4o | $0.30 | 10–30 s/run |
-| 5 examples | gpt-4o-mini | $0.05 | 5–15 s/run |
-| 5 examples | gemma4-e4b (agent) + Haiku (judge) | $0.03 | 60+ s/run on CPU, faster with GPU |
-| 5 examples | gemma4-e4b (agent only, `--no-llm-judge`) | $0.00 | same |
+| 5 examples | openai-gpt-4o | $0.30 | 10–30 s/run |
+| 5 examples | openai-gpt-4o-mini | $0.05 | 5–15 s/run |
+| 5 examples | local-gemma4-e4b (agent) + Haiku (judge) | $0.03 | 60+ s/run on CPU, faster with GPU |
+| 5 examples | local-gemma4-e4b (agent only, `--no-llm-judge`) | $0.00 | same |
 | 50 examples | Opus | $2.75 | — |
 
 Set a $50/month spend cap at <https://console.anthropic.com/settings/limits> as a safety net.
@@ -224,7 +224,7 @@ Set a $50/month spend cap at <https://console.anthropic.com/settings/limits> as 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `ImportError: ... requires the 'openai' extra` | OpenAI package not installed | `uv sync --extra openai` |
-| `httpx.ConnectError` on `--llm gemma4-e4b` | Ollama daemon not running | `ollama serve` |
+| `httpx.ConnectError` on `--llm local-gemma4-e4b` | Ollama daemon not running | `ollama serve` |
 | Gemma takes 60s+ per turn | Model unloads between calls | `OLLAMA_KEEP_ALIVE=24h` |
 | `DeprecationWarning: LLM_PROVIDER + OLLAMA_MODEL are deprecated` | Using old env vars | Switch to `AGENT_LLM=<source-name>` |
 | `unknown LLM source 'gemma3'` | Source not in registry | `uv run research --list-llms` to see options; add a new entry in `src/deepresearch/llm.py` |

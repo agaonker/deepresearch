@@ -21,21 +21,21 @@ from deepresearch.llm import (
 
 def test_known_sources_registered():
     expected = {
-        "opus", "sonnet", "haiku",
-        "gpt-4o", "gpt-4o-mini",
-        "gemini-2-flash",
-        "gemma4-e4b", "gemma4-e2b", "qwen-7b",
+        "claude-opus", "claude-sonnet", "claude-haiku",
+        "openai-gpt-4o", "openai-gpt-4o-mini",
+        "google-gemini-2-flash",
+        "local-gemma4-e4b", "local-gemma4-e2b", "local-qwen-7b",
     }
     missing = expected - SOURCES.keys()
     assert not missing, f"missing: {missing}"
 
 
 def test_anthropic_sources_marked_for_cache():
-    for name in ("opus", "sonnet"):
+    for name in ("claude-opus", "claude-sonnet"):
         assert SOURCES[name].supports_prompt_cache, f"{name} should support prompt cache"
     # Haiku is not flagged — judge use case keeps it cheap and Anthropic's
     # cost saving on small judge requests is negligible.
-    assert SOURCES["haiku"].supports_prompt_cache is False
+    assert SOURCES["claude-haiku"].supports_prompt_cache is False
 
 
 def test_get_source_unknown_raises():
@@ -48,19 +48,19 @@ def test_get_source_unknown_raises():
 # ---------------------------------------------------------------------------
 
 def test_resolve_uses_override():
-    assert resolve("agent", override="haiku").name == "haiku"
+    assert resolve("agent", override="claude-haiku").name == "claude-haiku"
 
 
 def test_resolve_uses_env_for_agent(monkeypatch):
-    monkeypatch.setenv("AGENT_LLM", "gemma4-e4b")
+    monkeypatch.setenv("AGENT_LLM", "local-gemma4-e4b")
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    assert resolve("agent").name == "gemma4-e4b"
+    assert resolve("agent").name == "local-gemma4-e4b"
 
 
 def test_resolve_uses_env_for_judge(monkeypatch):
-    monkeypatch.setenv("JUDGE_LLM", "sonnet")
+    monkeypatch.setenv("JUDGE_LLM", "claude-sonnet")
     monkeypatch.delenv("JUDGE_MODEL", raising=False)
-    assert resolve("judge").name == "sonnet"
+    assert resolve("judge").name == "claude-sonnet"
 
 
 def test_resolve_default_agent(monkeypatch):
@@ -68,13 +68,13 @@ def test_resolve_default_agent(monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
-    assert resolve("agent").name == "opus"
+    assert resolve("agent").name == "claude-opus"
 
 
 def test_resolve_default_judge(monkeypatch):
     monkeypatch.delenv("JUDGE_LLM", raising=False)
     monkeypatch.delenv("JUDGE_MODEL", raising=False)
-    assert resolve("judge").name == "haiku"
+    assert resolve("judge").name == "claude-haiku"
 
 
 def test_resolve_invalid_role_raises():
@@ -92,7 +92,7 @@ def test_resolve_legacy_ollama_env(monkeypatch):
     assert src.provider == "ollama"
     assert src.model == "gemma4:e4b"
     # Should match the registered gemma4-e4b entry, not a derived one
-    assert src.name == "gemma4-e4b"
+    assert src.name == "local-gemma4-e4b"
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
@@ -103,7 +103,7 @@ def test_resolve_legacy_anthropic_env(monkeypatch):
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always")
         src = resolve("agent")
-    assert src.name == "opus"
+    assert src.name == "claude-opus"
 
 
 def test_resolve_legacy_judge_model(monkeypatch):
@@ -112,7 +112,7 @@ def test_resolve_legacy_judge_model(monkeypatch):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         src = resolve("judge")
-    assert src.name == "haiku"
+    assert src.name == "claude-haiku"
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
@@ -121,7 +121,7 @@ def test_resolve_legacy_judge_model(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_system_message_anthropic_with_cache_uses_blocks():
-    src = SOURCES["opus"]
+    src = SOURCES["claude-opus"]
     msg = build_system_message("hello world", src)
     assert isinstance(msg.content, list)
     assert msg.content[0]["text"] == "hello world"
@@ -129,19 +129,19 @@ def test_system_message_anthropic_with_cache_uses_blocks():
 
 
 def test_system_message_anthropic_uncached_is_plain_string():
-    src = SOURCES["haiku"]
+    src = SOURCES["claude-haiku"]
     msg = build_system_message("hello world", src)
     assert msg.content == "hello world"
 
 
 def test_system_message_ollama_is_plain_string():
-    src = SOURCES["gemma4-e4b"]
+    src = SOURCES["local-gemma4-e4b"]
     msg = build_system_message("hello world", src)
     assert msg.content == "hello world"
 
 
 def test_system_message_openai_is_plain_string():
-    src = SOURCES["gpt-4o"]
+    src = SOURCES["openai-gpt-4o"]
     msg = build_system_message("hello world", src)
     assert msg.content == "hello world"
 
@@ -158,14 +158,14 @@ def test_build_chat_unknown_provider_raises():
 
 def test_build_chat_anthropic_returns_chat_anthropic():
     # langchain-anthropic is a default dep, so this should work without extras.
-    src = SOURCES["haiku"]  # uncached → smaller config to construct
+    src = SOURCES["claude-haiku"]  # uncached → smaller config to construct
     chat = build_chat(src, max_tokens=10, streaming=False)
     # langchain wraps; check we got something with the right model attribute
     assert getattr(chat, "model", None) == src.model or getattr(chat, "model_name", None) == src.model
 
 
 def test_build_chat_ollama_returns_chat_ollama():
-    src = SOURCES["gemma4-e4b"]
+    src = SOURCES["local-gemma4-e4b"]
     chat = build_chat(src, max_tokens=10, streaming=False)
     assert getattr(chat, "model", None) == src.model
 
@@ -184,7 +184,7 @@ def _sample_tools():
 
 def test_prepare_tools_caching_anthropic_marks_last_tool():
     tools = _sample_tools()
-    out = prepare_tools_for_caching(tools, SOURCES["opus"])
+    out = prepare_tools_for_caching(tools, SOURCES["claude-opus"])
     assert len(out) == len(tools)
     # All entries are dicts with Anthropic tool shape.
     for entry in out:
@@ -198,7 +198,7 @@ def test_prepare_tools_caching_anthropic_marks_last_tool():
 
 def test_prepare_tools_caching_anthropic_preserves_order():
     tools = _sample_tools()
-    out = prepare_tools_for_caching(tools, SOURCES["sonnet"])
+    out = prepare_tools_for_caching(tools, SOURCES["claude-sonnet"])
     expected_names = [t.name for t in tools]
     got_names = [entry["name"] for entry in out]
     assert got_names == expected_names
@@ -206,7 +206,7 @@ def test_prepare_tools_caching_anthropic_preserves_order():
 
 def test_prepare_tools_caching_ollama_passthrough():
     tools = _sample_tools()
-    out = prepare_tools_for_caching(tools, SOURCES["gemma4-e4b"])
+    out = prepare_tools_for_caching(tools, SOURCES["local-gemma4-e4b"])
     # Ollama provider: returned unchanged (still BaseTool objects, not dicts).
     assert list(out) == list(tools)
     for entry in out:
@@ -215,13 +215,13 @@ def test_prepare_tools_caching_ollama_passthrough():
 
 def test_prepare_tools_caching_openai_passthrough():
     tools = _sample_tools()
-    out = prepare_tools_for_caching(tools, SOURCES["gpt-4o"])
+    out = prepare_tools_for_caching(tools, SOURCES["openai-gpt-4o"])
     # OpenAI uses server-side prefix caching; no client-side cache_control needed.
     assert list(out) == list(tools)
 
 
 def test_prepare_tools_caching_empty_list_returned_unchanged():
-    out = prepare_tools_for_caching([], SOURCES["opus"])
+    out = prepare_tools_for_caching([], SOURCES["claude-opus"])
     assert list(out) == []
 
 
@@ -246,8 +246,8 @@ def test_prepare_tools_caching_survives_bind_tools():
     Guards against the failure mode where LangChain re-formats dicts and drops
     keys it doesn't recognize."""
     tools = _sample_tools()
-    cacheable = prepare_tools_for_caching(tools, SOURCES["opus"])
-    llm = build_chat(SOURCES["haiku"], max_tokens=10, streaming=False)
+    cacheable = prepare_tools_for_caching(tools, SOURCES["claude-opus"])
+    llm = build_chat(SOURCES["claude-haiku"], max_tokens=10, streaming=False)
     bound = llm.bind_tools(cacheable)
     bound_tools = getattr(bound, "kwargs", {}).get("tools", [])
     assert len(bound_tools) == len(tools)

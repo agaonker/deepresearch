@@ -36,7 +36,7 @@ def usage_of(resp):
 
 def main() -> None:
     load_dotenv()
-    src = resolve("agent", override="haiku")
+    src = resolve("agent", override="claude-haiku")
     retriever = ToolRetriever(ALL_DATA_TOOLS + ALL_RENDER_TOOLS)
     query = "what is BM25 in one sentence"
     top = retriever.search(query, k=8)

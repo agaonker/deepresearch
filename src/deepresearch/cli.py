@@ -167,11 +167,11 @@ def _join_blocks(content: list[Any]) -> str:
 
 def _print_llm_registry() -> None:
     from deepresearch.llm import SOURCES
-    print(f"{'name':<18} {'provider':<10} {'model':<32} {'cache':<6} notes")
+    print(f"{'name':<22} {'provider':<10} {'model':<32} {'cache':<6} notes")
     print("-" * 100)
     for src in SOURCES.values():
         cache = "yes" if src.supports_prompt_cache else "—"
-        print(f"{src.name:<18} {src.provider:<10} {src.model:<32} {cache:<6} {src.notes}")
+        print(f"{src.name:<22} {src.provider:<10} {src.model:<32} {cache:<6} {src.notes}")
 
 
 def _explain_tools(query: str) -> None:

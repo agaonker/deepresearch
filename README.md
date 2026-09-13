@@ -27,7 +27,7 @@ Haiku driving `render_chart` after a single prompt. Sharp single-line frames, bo
 ![render_chart driven by Claude Haiku](docs/images/render-chart-haiku.png)
 
 ```bash
-uv run research --llm haiku "show me a chart of approximate input token prices per million for opus, sonnet, and haiku"
+uv run research --llm claude-haiku "show me a chart of approximate input token prices per million for opus, sonnet, and haiku"
 ```
 
 The full design system that drives every render kind lives in [DESIGN.md](DESIGN.md).
@@ -291,14 +291,14 @@ deepresearch/
 
 ## LLM sources
 
-The agent and the eval judge each pick a named LLM source from a registry in [`src/deepresearch/llm.py`](src/deepresearch/llm.py) — Anthropic (`opus`/`sonnet`/`haiku`), OpenAI, Google, and local Ollama models. Adding a new model is one line in the registry.
+The agent and the eval judge each pick a named LLM source from a registry in [`src/deepresearch/llm.py`](src/deepresearch/llm.py) — Anthropic (`claude-opus`/`claude-sonnet`/`claude-haiku`), OpenAI, Google, and local Ollama models. Adding a new model is one line in the registry.
 
 ```bash
 uv run research --list-llms                       # list registered sources
-uv run research --llm sonnet "your query"         # pick one for a run
+uv run research --llm claude-sonnet "your query"   # pick one for a run
 ```
 
-Defaults: agent → `opus`, judge → `haiku`.
+Defaults: agent → `claude-opus`, judge → `claude-haiku`.
 
 → **[docs/llm-sources.md](docs/llm-sources.md)** for the full registry, per-provider caching, optional extras, Ollama setup, and how to add a source.
 

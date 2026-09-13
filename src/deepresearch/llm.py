@@ -54,48 +54,48 @@ class LLMSource:
 
 SOURCES: dict[str, LLMSource] = {
     # Anthropic — cloud, prompt-cache eligible
-    "opus": LLMSource(
-        name="opus", provider="anthropic", model="claude-opus-4-7",
+    "claude-opus": LLMSource(
+        name="claude-opus", provider="anthropic", model="claude-opus-4-7",
         supports_prompt_cache=True,
         notes="frontier; best tool calling and reasoning",
     ),
-    "sonnet": LLMSource(
-        name="sonnet", provider="anthropic", model="claude-sonnet-4-6",
+    "claude-sonnet": LLMSource(
+        name="claude-sonnet", provider="anthropic", model="claude-sonnet-4-6",
         supports_prompt_cache=True,
         notes="cheaper iteration; near-Opus quality",
     ),
-    "haiku": LLMSource(
-        name="haiku", provider="anthropic", model="claude-haiku-4-5-20251001",
+    "claude-haiku": LLMSource(
+        name="claude-haiku", provider="anthropic", model="claude-haiku-4-5-20251001",
         notes="fast/cheap; default judge",
     ),
 
     # OpenAI — cloud, automatic prefix caching server-side
-    "gpt-4o": LLMSource(
-        name="gpt-4o", provider="openai", model="gpt-4o",
+    "openai-gpt-4o": LLMSource(
+        name="openai-gpt-4o", provider="openai", model="gpt-4o",
         notes="OpenAI flagship multimodal",
     ),
-    "gpt-4o-mini": LLMSource(
-        name="gpt-4o-mini", provider="openai", model="gpt-4o-mini",
+    "openai-gpt-4o-mini": LLMSource(
+        name="openai-gpt-4o-mini", provider="openai", model="gpt-4o-mini",
         notes="OpenAI cheap/fast",
     ),
 
     # Google — cloud (cloud-hosted Gemma / Gemini)
-    "gemini-2-flash": LLMSource(
-        name="gemini-2-flash", provider="google", model="gemini-2.0-flash",
+    "google-gemini-2-flash": LLMSource(
+        name="google-gemini-2-flash", provider="google", model="gemini-2.0-flash",
         notes="Google Gemini 2 flash; implicit cache on 2.5+ tier",
     ),
 
     # Ollama — local
-    "gemma4-e4b": LLMSource(
-        name="gemma4-e4b", provider="ollama", model="gemma4:e4b",
+    "local-gemma4-e4b": LLMSource(
+        name="local-gemma4-e4b", provider="ollama", model="gemma4:e4b",
         notes="local; 4B effective; tool-call quality lower than Opus",
     ),
-    "gemma4-e2b": LLMSource(
-        name="gemma4-e2b", provider="ollama", model="gemma4:e2b",
+    "local-gemma4-e2b": LLMSource(
+        name="local-gemma4-e2b", provider="ollama", model="gemma4:e2b",
         notes="local; 2B effective; smaller/faster than e4b",
     ),
-    "qwen-7b": LLMSource(
-        name="qwen-7b", provider="ollama", model="qwen2.5:7b",
+    "local-qwen-7b": LLMSource(
+        name="local-qwen-7b", provider="ollama", model="qwen2.5:7b",
         notes="local; reliable tool calling on local hardware",
     ),
 }
@@ -105,7 +105,7 @@ SOURCES: dict[str, LLMSource] = {
 # Resolution
 # ---------------------------------------------------------------------------
 
-_DEFAULTS = {"agent": "opus", "judge": "haiku"}
+_DEFAULTS = {"agent": "claude-opus", "judge": "claude-haiku"}
 _ENV_VARS = {"agent": "AGENT_LLM", "judge": "JUDGE_LLM"}
 
 
@@ -149,7 +149,7 @@ def _legacy_from_env(role: str) -> LLMSource | None:
         if model := os.getenv("JUDGE_MODEL"):
             warnings.warn(
                 "JUDGE_MODEL is deprecated; set JUDGE_LLM=<source-name> instead "
-                "(e.g. JUDGE_LLM=haiku).",
+                "(e.g. JUDGE_LLM=claude-haiku).",
                 DeprecationWarning,
                 stacklevel=3,
             )
@@ -166,7 +166,7 @@ def _legacy_from_env(role: str) -> LLMSource | None:
         model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
         warnings.warn(
             "LLM_PROVIDER + OLLAMA_MODEL are deprecated; set AGENT_LLM=<source-name> "
-            "(e.g. AGENT_LLM=gemma4-e4b).",
+            "(e.g. AGENT_LLM=local-gemma4-e4b).",
             DeprecationWarning,
             stacklevel=3,
         )
@@ -177,7 +177,7 @@ def _legacy_from_env(role: str) -> LLMSource | None:
         model = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
         warnings.warn(
             "LLM_PROVIDER + ANTHROPIC_MODEL are deprecated; set AGENT_LLM=<source-name> "
-            "(e.g. AGENT_LLM=opus).",
+            "(e.g. AGENT_LLM=claude-opus).",
             DeprecationWarning,
             stacklevel=3,
         )
